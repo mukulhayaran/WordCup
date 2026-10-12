@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import type { GuessRecord } from "@/lib/apiTypes";
 import type { LetterStatus } from "@/lib/feedback";
+import { TILE_BG, TILE_FG } from "./tiles";
 
 const ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 
@@ -20,12 +21,6 @@ function bestStatusPerLetter(guesses: GuessRecord[]): Record<string, LetterStatu
   return best;
 }
 
-const KEY_COLOR: Record<LetterStatus, string> = {
-  correct: "var(--tile-correct)",
-  present: "var(--tile-present)",
-  absent: "var(--tile-absent)",
-};
-
 export function Keyboard({
   guesses,
   onKey,
@@ -39,7 +34,7 @@ export function Keyboard({
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
-      if (disabled) return;
+      if (disabled || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "Enter") onKey("ENTER");
       else if (e.key === "Backspace") onKey("BACKSPACE");
       else if (/^[a-zA-Z]$/.test(e.key)) onKey(e.key.toLowerCase());
@@ -48,35 +43,38 @@ export function Keyboard({
     return () => window.removeEventListener("keydown", handler);
   }, [onKey, disabled]);
 
-  function Key({ value, wide, label }: { value: string; wide?: boolean; label?: string }) {
+  const key = (value: string, label: string, grow: number, ariaLabel?: string) => {
     const status = letterStatus[value];
     return (
       <button
+        key={value}
         type="button"
         disabled={disabled}
         onClick={() => onKey(value)}
-        className={`h-12 ${wide ? "px-3 text-xs" : "w-9"} rounded font-semibold uppercase disabled:opacity-50 active:scale-95 transition`}
+        aria-label={ariaLabel ?? label}
+        className={`h-[52px] rounded-[12px] font-semibold uppercase active:scale-95 transition-[transform,background-color] duration-200 ${
+          label.length > 1 ? "text-[13px]" : "text-[18px]"
+        }`}
         style={{
-          background: status ? KEY_COLOR[status] : "var(--card)",
-          color: status ? "white" : "var(--foreground)",
-          border: "1px solid var(--card-border)",
-          flex: wide ? "1 1 0" : undefined,
+          flex: `${grow} 1 0`,
+          background: status ? TILE_BG[status] : "var(--accent-soft)",
+          color: status ? TILE_FG[status] : "var(--ink)",
         }}
       >
-        {label ?? value}
+        {label}
       </button>
     );
-  }
+  };
 
   return (
-    <div className="flex flex-col gap-2 w-full max-w-md">
+    <div className="flex flex-col gap-[6px] w-full max-w-[480px]">
       {ROWS.map((row, i) => (
-        <div key={i} className="flex gap-1.5 justify-center">
-          {i === 2 && <Key value="ENTER" wide label="Enter" />}
-          {row.split("").map((l) => (
-            <Key key={l} value={l} />
-          ))}
-          {i === 2 && <Key value="BACKSPACE" wide label="⌫" />}
+        <div key={i} className="flex gap-[6px]">
+          {i === 1 && <div style={{ flex: "0.5 1 0" }} />}
+          {i === 2 && key("ENTER", "Enter", 1.5)}
+          {row.split("").map((l) => key(l, l, 1))}
+          {i === 2 && key("BACKSPACE", "Del", 1.5, "Delete")}
+          {i === 1 && <div style={{ flex: "0.5 1 0" }} />}
         </div>
       ))}
     </div>

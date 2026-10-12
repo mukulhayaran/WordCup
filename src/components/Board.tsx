@@ -1,52 +1,90 @@
+import type { CSSProperties } from "react";
 import type { GuessRecord } from "@/lib/apiTypes";
-import type { LetterStatus } from "@/lib/feedback";
+import { TILE_BG, TILE_FG } from "./tiles";
 
-const TILE_COLOR: Record<LetterStatus, string> = {
-  correct: "var(--tile-correct)",
-  present: "var(--tile-present)",
-  absent: "var(--tile-absent)",
-};
+export const FLIP_STAGGER_MS = 260;
+export const FLIP_DURATION_MS = 520;
 
 export function Board({
   guesses,
   currentGuess,
+  revealingRow,
+  shaking,
+  onShakeEnd,
   maxRows = 6,
 }: {
   guesses: GuessRecord[];
   currentGuess: string;
+  /** Index of the row whose tiles should flip in now (just submitted). */
+  revealingRow: number | null;
+  shaking: boolean;
+  onShakeEnd: () => void;
   maxRows?: number;
 }) {
-  const rows = Array.from({ length: maxRows }, (_, i) => {
-    if (i < guesses.length) return { letters: guesses[i].guess.split(""), feedback: guesses[i].feedback };
-    if (i === guesses.length) {
-      const letters = currentGuess.padEnd(5).split("");
-      return { letters, feedback: null };
-    }
-    return { letters: ["", "", "", "", ""], feedback: null };
-  });
-
   return (
-    <div className="flex flex-col gap-2">
-      {rows.map((row, ri) => (
-        <div key={ri} className="flex gap-2">
-          {row.letters.map((letter, ci) => {
-            const status = row.feedback?.[ci];
-            return (
-              <div
-                key={ci}
-                className="h-14 w-14 flex items-center justify-center text-2xl font-bold rounded border-2 uppercase transition-colors"
-                style={{
-                  borderColor: status ? TILE_COLOR[status] : letter.trim() ? "var(--brand)" : "var(--card-border)",
-                  background: status ? TILE_COLOR[status] : "transparent",
-                  color: status ? "white" : "var(--foreground)",
-                }}
-              >
-                {letter.trim()}
-              </div>
-            );
-          })}
-        </div>
-      ))}
+    <div className="flex flex-col gap-[6px]" role="grid" aria-label="Guesses">
+      {Array.from({ length: maxRows }, (_, ri) => {
+        const submitted = guesses[ri];
+        const isCurrent = ri === guesses.length;
+        const letters = submitted
+          ? submitted.guess.split("")
+          : isCurrent
+            ? currentGuess.padEnd(5).split("")
+            : ["", "", "", "", ""];
+
+        return (
+          <div
+            key={ri}
+            role="row"
+            className={`flex gap-[6px] ${isCurrent && shaking ? "row-shake" : ""}`}
+            onAnimationEnd={isCurrent ? onShakeEnd : undefined}
+          >
+            {letters.map((raw, ci) => {
+              const letter = raw.trim();
+              const status = submitted?.feedback[ci];
+              // --tile is set by the page so the board shrinks to fit short screens.
+              const base =
+                "flex items-center justify-center rounded-[14px] border-2 uppercase font-semibold select-none w-[var(--tile,58px)] h-[var(--tile,58px)] text-[calc(var(--tile,58px)*0.5)]";
+
+              if (status) {
+                const style: CSSProperties & Record<string, string> = {
+                  background: TILE_BG[status],
+                  borderColor: TILE_BG[status],
+                  color: TILE_FG[status],
+                };
+                if (ri === revealingRow) {
+                  style["--to-bg"] = TILE_BG[status];
+                  style["--to-fg"] = TILE_FG[status];
+                  style.animationDelay = `${ci * FLIP_STAGGER_MS}ms`;
+                }
+                return (
+                  <div
+                    key={ci}
+                    role="gridcell"
+                    aria-label={`${letter} ${status}`}
+                    className={`${base} ${ri === revealingRow ? "tile-flip" : ""}`}
+                    style={style}
+                  >
+                    {letter}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  // Re-keying on the letter remounts the tile so the pop plays on each keystroke.
+                  key={`${ci}-${letter}`}
+                  role="gridcell"
+                  className={`${base} bg-card ${letter ? "tile-pop" : ""}`}
+                  style={{ borderColor: letter ? "var(--typed)" : "var(--line)", color: "var(--ink)" }}
+                >
+                  {letter}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

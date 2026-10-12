@@ -1,34 +1,41 @@
+import { playerTheme } from "@/lib/theme";
+
 export function PlayerAvatar({
   name,
   avatarInitial,
   avatarUrl,
-  size = 72,
+  size = 48,
+  ring = false,
+  filled = false,
 }: {
   name: string;
   avatarInitial: string;
   avatarUrl: string | null;
   size?: number;
+  /** Draw a ring in the player's colour (PIN sheet, duel cards). */
+  ring?: boolean;
+  /** Solid player colour instead of the pale tint (score cards). */
+  filled?: boolean;
 }) {
-  if (avatarUrl) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- signed URLs expire; next/image's cache would outlive them
-      <img
-        src={avatarUrl}
-        alt={name}
-        width={size}
-        height={size}
-        className="rounded-full object-cover shrink-0"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-
+  const theme = playerTheme(name);
   return (
     <div
-      className="rounded-full bg-brand text-white font-bold flex items-center justify-center shrink-0"
-      style={{ width: size, height: size, fontSize: size * 0.4 }}
+      className="rounded-full flex items-center justify-center shrink-0 overflow-hidden font-semibold"
+      style={{
+        width: size,
+        height: size,
+        fontSize: size * 0.42,
+        background: filled ? theme.color : theme.soft,
+        color: filled ? theme.onColor : theme.ink,
+        border: ring ? `3px solid ${theme.color}` : undefined,
+      }}
     >
-      {avatarInitial}
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- signed URLs expire; next/image's cache would outlive them
+        <img src={avatarUrl} alt={name} className="h-full w-full object-cover object-top" />
+      ) : (
+        avatarInitial
+      )}
     </div>
   );
 }

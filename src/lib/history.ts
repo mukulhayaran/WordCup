@@ -1,3 +1,4 @@
+import { longestRun } from "./calendar";
 import { toEmojiRow, type LetterStatus } from "./feedback";
 import { datesInRange, todayGameDate, weekRangeForGameDate } from "./gameDate";
 import { isDayRevealed, type FinishStatus } from "./reveal";
@@ -20,10 +21,13 @@ type DaySummary = {
   b: DayOutcome;
   aEmojiGrid: string | null;
   bEmojiGrid: string | null;
+  aRows: LetterStatus[][] | null;
+  bRows: LetterStatus[][] | null;
   points: { a: number; b: number };
 };
 
 export type WeekSummary = {
+  weekNumber: number;
   weekStart: string;
   weekEnd: string;
   isCurrent: boolean;
@@ -39,15 +43,17 @@ export type HistoryResult = {
   headToHead: { aWins: number; bWins: number; ties: number };
   averageGuesses: { a: number | null; b: number | null };
   currentStreak: { a: number; b: number };
+  bestStreak: { a: number; b: number };
 };
 
 function toOutcome(row: RawResult | undefined): {
   outcome: DayOutcome;
   status: FinishStatus;
   emojiGrid: string | null;
+  rows: LetterStatus[][] | null;
 } {
   if (!row) {
-    return { outcome: NOT_PLAYED, status: "not_played", emojiGrid: null };
+    return { outcome: NOT_PLAYED, status: "not_played", emojiGrid: null, rows: null };
   }
   const status: FinishStatus = row.status;
   const outcome: DayOutcome =
@@ -58,11 +64,10 @@ function toOutcome(row: RawResult | undefined): {
           solved: status === "won",
           numGuesses: status === "won" ? row.num_guesses : null,
         };
-  const emojiGrid =
-    status === "won" || status === "lost"
-      ? row.guesses.map((g) => toEmojiRow(g.feedback)).join("\n")
-      : null;
-  return { outcome, status, emojiGrid };
+  const finished = status === "won" || status === "lost";
+  const emojiGrid = finished ? row.guesses.map((g) => toEmojiRow(g.feedback)).join("\n") : null;
+  const rows = finished ? row.guesses.map((g) => g.feedback) : null;
+  return { outcome, status, emojiGrid, rows };
 }
 
 export async function getHistory(now: Date = new Date()): Promise<HistoryResult> {
@@ -89,6 +94,7 @@ export async function getHistory(now: Date = new Date()): Promise<HistoryResult>
       players: { a, b },
       weeks: [
         {
+          weekNumber: 1,
           weekStart: currentWeekStart,
           weekEnd: currentWeekEnd,
           isCurrent: true,
@@ -101,6 +107,7 @@ export async function getHistory(now: Date = new Date()): Promise<HistoryResult>
       headToHead: { aWins: 0, bWins: 0, ties: 0 },
       averageGuesses: { a: null, b: null },
       currentStreak: { a: 0, b: 0 },
+      bestStreak: { a: 0, b: 0 },
     };
   }
 
@@ -135,6 +142,8 @@ export async function getHistory(now: Date = new Date()): Promise<HistoryResult>
         b: NOT_PLAYED,
         aEmojiGrid: null,
         bEmojiGrid: null,
+        aRows: null,
+        bRows: null,
         points: { a: 0, b: 0 },
       };
     }
@@ -146,6 +155,8 @@ export async function getHistory(now: Date = new Date()): Promise<HistoryResult>
       b: bResult.outcome,
       aEmojiGrid: aResult.emojiGrid,
       bEmojiGrid: bResult.emojiGrid,
+      aRows: aResult.rows,
+      bRows: bResult.rows,
       points: scoreDay(aResult.outcome, bResult.outcome),
     };
   });
@@ -161,10 +172,11 @@ export async function getHistory(now: Date = new Date()): Promise<HistoryResult>
 
   const weeks: WeekSummary[] = Array.from(weekMap.entries())
     .sort(([wa], [wb]) => (wa < wb ? -1 : 1))
-    .map(([weekStart, days]) => {
+    .map(([weekStart, days], index) => {
       const { weekEnd } = weekRangeForGameDate(weekStart);
       const tally = tallyCup(days.map((d) => ({ a: d.a, b: d.b })));
       return {
+        weekNumber: index + 1,
         weekStart,
         weekEnd,
         isCurrent: weekStart === currentWeekStart,
@@ -222,5 +234,9 @@ export async function getHistory(now: Date = new Date()): Promise<HistoryResult>
       b: bGuessCount > 0 ? bGuessSum / bGuessCount : null,
     },
     currentStreak: { a: currentStreakFor("a"), b: currentStreakFor("b") },
+    bestStreak: {
+      a: longestRun(revealedDaysChronological.map((d) => d.points.a > d.points.b)),
+      b: longestRun(revealedDaysChronological.map((d) => d.points.b > d.points.a)),
+    },
   };
 }

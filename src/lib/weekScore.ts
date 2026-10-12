@@ -1,15 +1,23 @@
+import { datesInRange, weekRangeForGameDate } from "./gameDate";
+import { weekNumberSince } from "./calendar";
 import { isDayRevealed, type FinishStatus } from "./reveal";
 import { NOT_PLAYED, scoreDay, type DayOutcome } from "./scoring";
 import { supabaseAdmin } from "./supabaseAdmin";
 import type { Player } from "./auth";
 
-/** Live point tally for [weekStart, weekEnd], counting only revealed days. */
-export async function getWeekTally(
+export type WeekDay = {
+  date: string;
+  revealed: boolean;
+  points: { a: number; b: number };
+};
+
+/** Per-day points for [weekStart, weekEnd]; unrevealed days score nothing yet. */
+export async function getWeekBreakdown(
   players: [Player, Player],
   weekStart: string,
   weekEnd: string,
   now: Date = new Date()
-): Promise<{ a: number; b: number }> {
+): Promise<{ totals: { a: number; b: number }; days: WeekDay[] }> {
   const [a, b] = players;
   const db = supabaseAdmin();
   const { data: rows } = await db
@@ -38,12 +46,14 @@ export async function getWeekTally(
     byDate.set(row.game_date, entry);
   }
 
-  let totalA = 0;
-  let totalB = 0;
-  for (const [date, entry] of byDate) {
+  const totals = { a: 0, b: 0 };
+  const days = datesInRange(weekStart, weekEnd).map((date): WeekDay => {
+    const entry = byDate.get(date) ?? {};
     const statusA: FinishStatus = entry.aStatus ?? "not_played";
     const statusB: FinishStatus = entry.bStatus ?? "not_played";
-    if (!isDayRevealed(date, statusA, statusB, now)) continue;
+    if (!isDayRevealed(date, statusA, statusB, now)) {
+      return { date, revealed: false, points: { a: 0, b: 0 } };
+    }
 
     const outcomeA: DayOutcome =
       statusA === "won" || statusA === "lost"
@@ -55,9 +65,33 @@ export async function getWeekTally(
         : NOT_PLAYED;
 
     const points = scoreDay(outcomeA, outcomeB);
-    totalA += points.a;
-    totalB += points.b;
-  }
+    totals.a += points.a;
+    totals.b += points.b;
+    return { date, revealed: true, points };
+  });
 
-  return { a: totalA, b: totalB };
+  return { totals, days };
+}
+
+/** Live point tally for [weekStart, weekEnd], counting only revealed days. */
+export async function getWeekTally(
+  players: [Player, Player],
+  weekStart: string,
+  weekEnd: string,
+  now: Date = new Date()
+): Promise<{ a: number; b: number }> {
+  const { totals } = await getWeekBreakdown(players, weekStart, weekEnd, now);
+  return totals;
+}
+
+/** 1-based cup number for the week starting `weekStart` (Week 1 = first week anyone played). */
+export async function getCupWeekNumber(weekStart: string): Promise<number> {
+  const { data: earliest } = await supabaseAdmin()
+    .from("game_results")
+    .select("game_date")
+    .order("game_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!earliest) return 1;
+  return weekNumberSince(weekRangeForGameDate(earliest.game_date).weekStart, weekStart);
 }
