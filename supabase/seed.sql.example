@@ -1,0 +1,13 @@
+-- Template for creating the two players. Do NOT commit a filled-in copy of
+-- this with real PIN hashes to a public repo (a private repo is fine, but
+-- it's still good hygiene to keep secrets out of git history).
+--
+-- 1. Run: node scripts/hash-pin.mjs 1234   (replace 1234 with Mukul's PIN)
+-- 2. Paste the printed hash below in place of PIN_HASH_HERE.
+-- 3. Repeat for Madhulika.
+-- 4. Run the resulting SQL in the Supabase SQL Editor.
+
+insert into players (name, role_label, avatar_initial, pin_hash)
+values
+  ('Mukul', 'Home Minister', 'M', 'PIN_HASH_HERE'),
+  ('Madhulika', 'Prime Minister', 'M', 'PIN_HASH_HERE');
