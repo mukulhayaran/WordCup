@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { supabaseAdmin } from "./supabaseAdmin";
 
 export const AVATAR_BUCKET = "player-avatars";
@@ -20,4 +22,20 @@ export async function avatarSignedUrl(
 
   if (error || !data) return null;
   return data.signedUrl;
+}
+
+/**
+ * A player's photo URL. In local development a gitignored
+ * public/local-avatars/<Name>.png takes precedence, so photos can be
+ * previewed without uploading them anywhere.
+ */
+export async function avatarUrlFor(player: {
+  name: string;
+  avatar_photo_path: string | null;
+}): Promise<string | null> {
+  if (process.env.NODE_ENV === "development") {
+    const file = path.join(process.cwd(), "public", "local-avatars", `${player.name}.png`);
+    if (existsSync(file)) return `/local-avatars/${encodeURIComponent(player.name)}.png`;
+  }
+  return avatarSignedUrl(player.avatar_photo_path);
 }

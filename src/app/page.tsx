@@ -95,11 +95,10 @@ export default function LandingPage() {
               className="relative flex flex-col items-center rounded-[28px] bg-card shadow-soft px-3 pt-[96px] pb-6 active:scale-[0.98] transition-transform"
               style={{ borderTop: `6px solid ${theme.color}` }}
             >
-              <div className="absolute -top-[64px] left-1/2 -translate-x-1/2">
+              <div className="absolute -top-[78px] left-1/2 -translate-x-1/2">
                 <PlayerCutout name={p.name} avatarInitial={p.avatarInitial} avatarUrl={p.avatarUrl} />
               </div>
               <span className="text-[26px] font-bold text-ink">{p.name}</span>
-              <span className="mt-1 text-[16px] text-muted">{p.roleLabel}</span>
               {p.playedToday ? (
                 <span className="mt-4 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--madhulika-soft)] px-3 py-1.5 text-[14px] font-semibold text-[var(--madhulika-ink)]">
                   <Check className="h-4 w-4" strokeWidth={3} aria-hidden />

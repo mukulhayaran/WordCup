@@ -1,6 +1,6 @@
 import { NextResponse, connection } from "next/server";
 import { getAllPlayers } from "@/lib/auth";
-import { avatarSignedUrl } from "@/lib/avatars";
+import { avatarUrlFor } from "@/lib/avatars";
 import { weekdayName } from "@/lib/calendar";
 import { todayGameDate, weekRangeForGameDate } from "@/lib/gameDate";
 import { getPlayerDayStatus } from "@/lib/game";
@@ -25,7 +25,7 @@ export async function GET() {
   const playersWithStatus = await Promise.all(
     players.map(async (p, i) => {
       const status = await getPlayerDayStatus(p.id, gameDate);
-      const avatarUrl = await avatarSignedUrl(p.avatar_photo_path);
+      const avatarUrl = await avatarUrlFor(p);
       return {
         id: p.id,
         name: p.name,

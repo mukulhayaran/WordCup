@@ -253,10 +253,10 @@ export default function PlayPage() {
   );
 }
 
-function praise(numGuesses: number, roleLabel: string): string {
-  if (numGuesses <= 2) return `Unreal, ${roleLabel}!`;
-  if (numGuesses <= 4) return `Nice one, ${roleLabel}`;
-  return `Phew — got there, ${roleLabel}`;
+function praise(numGuesses: number, name: string): string {
+  if (numGuesses <= 2) return `Unreal, ${name}!`;
+  if (numGuesses <= 4) return `Nice one, ${name}`;
+  return `Phew — got there, ${name}`;
 }
 
 function formatCountdown(ms: number): string {
@@ -307,7 +307,7 @@ function FinishedView({
   }
 
   const won = game.status === "won";
-  const roleLabel = game.you?.roleLabel ?? "";
+  const yourName = game.you?.name ?? "";
   const oppTheme = playerTheme(opponent?.name ?? "");
 
   return (
@@ -346,7 +346,7 @@ function FinishedView({
         </h2>
         <p className="text-[17px] text-muted">
           {won
-            ? praise(game.numGuesses ?? 6, roleLabel)
+            ? praise(game.numGuesses ?? 6, yourName)
             : `The word was ${game.solution?.toUpperCase() ?? "—"}. Tomorrow's yours.`}
         </p>
 

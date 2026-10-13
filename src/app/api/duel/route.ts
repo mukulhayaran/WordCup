@@ -1,6 +1,6 @@
 import { NextResponse, connection } from "next/server";
 import { getAllPlayers } from "@/lib/auth";
-import { avatarSignedUrl } from "@/lib/avatars";
+import { avatarUrlFor } from "@/lib/avatars";
 import { weekdayName } from "@/lib/calendar";
 import { todayGameDate, weekRangeForGameDate } from "@/lib/gameDate";
 import { getGameResult } from "@/lib/game";
@@ -46,7 +46,7 @@ export async function GET() {
     name: p.name,
     roleLabel: p.role_label,
     avatarInitial: p.avatar_initial,
-    avatarUrl: await avatarSignedUrl(p.avatar_photo_path),
+    avatarUrl: await avatarUrlFor(p),
     status,
     numGuesses: row?.num_guesses ?? null,
     // Colours only — no letters, matching the shareable emoji grid.

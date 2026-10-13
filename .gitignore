@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 /screenshots/
+# Local-only player photos for previewing (never committed)
+/public/local-avatars/
 *.pem
 
 # debug
