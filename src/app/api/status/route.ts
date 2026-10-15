@@ -16,8 +16,17 @@ export async function GET() {
   await connection();
 
   const players = await getAllPlayers();
-  const gameDate = todayGameDate();
   const sessionPlayerId = await getSessionPlayerId();
+
+  // Logged out: only what the login screen needs. No photos, scores or statuses.
+  if (!sessionPlayerId) {
+    return NextResponse.json({
+      sessionPlayerId: null,
+      players: players.map((p) => ({ id: p.id, name: p.name, avatarInitial: p.avatar_initial })),
+    });
+  }
+
+  const gameDate = todayGameDate();
   const { weekStart, weekEnd } = weekRangeForGameDate(gameDate);
 
   const breakdown =
@@ -63,7 +72,6 @@ export async function GET() {
     weekDays,
     players: playersWithStatus,
     sessionPlayerId,
-    // Private to the logged-in player; null for anyone not logged in.
     forYou: you && them ? await forPlayer(you, them, gameDate, weekStart, rows[players.indexOf(you)]?.status) : null,
   });
 }

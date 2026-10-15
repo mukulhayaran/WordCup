@@ -12,13 +12,16 @@ import { PinPad } from "@/components/PinPad";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerCutout } from "@/components/PlayerCutout";
 import { vibrate } from "@/components/tiles";
-import type { StatusPlayer, StatusResponse } from "@/lib/apiTypes";
+import type { LoggedOutStatus, StatusResponse } from "@/lib/apiTypes";
 import { inDisplayOrder, playerTheme } from "@/lib/theme";
+
+type LoginPlayer = LoggedOutStatus["players"][number] & { avatarUrl?: string | null };
 
 export default function LandingPage() {
   const router = useRouter();
   const [status, setStatus] = useState<StatusResponse | null>(null);
-  const [selected, setSelected] = useState<StatusPlayer | null>(null);
+  const [loginPlayers, setLoginPlayers] = useState<LoginPlayer[] | null>(null);
+  const [selected, setSelected] = useState<LoginPlayer | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [celebrationClosed, setCelebrationClosed] = useState(false);
@@ -26,13 +29,17 @@ export default function LandingPage() {
   useEffect(() => {
     fetch("/api/status")
       .then((r) => r.json())
-      .then((data: StatusResponse) => {
+      .then((data: StatusResponse | LoggedOutStatus) => {
+        if (!data.sessionPlayerId) {
+          setLoginPlayers(data.players);
+          return;
+        }
         // Remembered on this device: go straight to the game, unless there's
         // something waiting for you here (a champion, a nudge or a message).
-        const f = data.forYou;
+        const f = (data as StatusResponse).forYou;
         const waiting = !!f && (!!f.celebration || !!f.nudgeFrom || f.messages.length > 0);
-        if (data.sessionPlayerId && !waiting) router.replace("/play");
-        else setStatus(data);
+        if (!waiting) router.replace("/play");
+        else setStatus(data as StatusResponse);
       });
   }, [router]);
 
@@ -73,6 +80,55 @@ export default function LandingPage() {
     },
     [selected, router]
   );
+
+  const pinSheet = selected && (
+    <PinSheet
+      player={selected}
+      error={pinError}
+      submitting={submitting}
+      onSubmit={submitPin}
+      onClose={() => setSelected(null)}
+    />
+  );
+
+  // Not logged in: names and the PIN pad only — no photos, scores or statuses.
+  if (loginPlayers) {
+    return (
+      <main className="flex-1 flex flex-col w-full max-w-[480px] mx-auto px-5 pt-14 pb-8">
+        <header className="text-center">
+          <h1 className="flex items-center justify-center gap-3 text-[40px] font-bold leading-none text-ink">
+            <Trophy className="h-9 w-9 text-correct" strokeWidth={2.4} aria-hidden />
+            Word Cup
+          </h1>
+          <p className="mt-2 text-[18px] text-muted">Who&apos;s playing?</p>
+        </header>
+
+        <div className="mt-12 grid grid-cols-2 gap-4">
+          {inDisplayOrder(loginPlayers).map((p) => {
+            const theme = playerTheme(p.name);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setSelected(p);
+                  setPinError(null);
+                }}
+                className="flex flex-col items-center gap-4 rounded-[28px] bg-card shadow-soft px-3 py-7 active:scale-[0.98] transition-transform"
+                style={{ borderTop: `6px solid ${theme.color}` }}
+              >
+                <PlayerAvatar name={p.name} avatarInitial={p.avatarInitial} avatarUrl={null} size={84} />
+                <span className="text-[24px] font-bold text-ink">{p.name}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="mt-auto pt-12 text-center text-[17px] text-muted">Tap your name to log in</p>
+        {pinSheet}
+      </main>
+    );
+  }
 
   if (!status) {
     return (
@@ -175,38 +231,50 @@ export default function LandingPage() {
         />
       )}
 
-      {selected && (
-        <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={`Enter ${selected.name}'s PIN`}>
-          <div className="absolute inset-0 bg-[rgb(201_61_102/0.22)] fade-in" onClick={() => setSelected(null)} />
-          <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[480px] rounded-t-[32px] bg-bg px-6 pt-3 pb-8 shadow-soft sheet-in">
-            <div className="mx-auto h-[5px] w-11 rounded-full bg-line" />
-            <div className="mt-6 flex flex-col items-center">
-              <PlayerAvatar
-                name={selected.name}
-                avatarInitial={selected.avatarInitial}
-                avatarUrl={selected.avatarUrl}
-                size={88}
-                ring
-              />
-              <p className="mt-5 text-[30px] font-bold text-ink">Hi, {selected.name}</p>
-              <p className="mt-1 text-[17px] text-muted">Enter your 4-digit PIN</p>
-              <p className="mt-2 h-5 text-[15px] font-medium text-correct" role="alert">
-                {pinError}
-              </p>
-              <div className="mt-4">
-                <PinPad onSubmit={submitPin} disabled={submitting} color={playerTheme(selected.name).color} />
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="mt-8 text-[17px] font-semibold text-correct"
-              >
-                Not you? Go back
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {pinSheet}
     </main>
+  );
+}
+
+function PinSheet({
+  player,
+  error,
+  submitting,
+  onSubmit,
+  onClose,
+}: {
+  player: LoginPlayer;
+  error: string | null;
+  submitting: boolean;
+  onSubmit: (pin: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={`Enter ${player.name}'s PIN`}>
+      <div className="absolute inset-0 bg-[rgb(201_61_102/0.22)] fade-in" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[480px] rounded-t-[32px] bg-bg px-6 pt-3 pb-8 shadow-soft sheet-in">
+        <div className="mx-auto h-[5px] w-11 rounded-full bg-line" />
+        <div className="mt-6 flex flex-col items-center">
+          <PlayerAvatar
+            name={player.name}
+            avatarInitial={player.avatarInitial}
+            avatarUrl={player.avatarUrl ?? null}
+            size={88}
+            ring
+          />
+          <p className="mt-5 text-[30px] font-bold text-ink">Hi, {player.name}</p>
+          <p className="mt-1 text-[17px] text-muted">Enter your 4-digit PIN</p>
+          <p className="mt-2 h-5 text-[15px] font-medium text-correct" role="alert">
+            {error}
+          </p>
+          <div className="mt-4">
+            <PinPad onSubmit={onSubmit} disabled={submitting} color={playerTheme(player.name).color} />
+          </div>
+          <button type="button" onClick={onClose} className="mt-8 text-[17px] font-semibold text-correct">
+            Not you? Go back
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

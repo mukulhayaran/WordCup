@@ -11,6 +11,8 @@ const fredoka = Fredoka({
 export const metadata: Metadata = {
   title: "Word Cup",
   description: "A private daily word duel for two.",
+  // Private site: keep it out of search engines.
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
