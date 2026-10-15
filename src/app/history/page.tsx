@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Clock, Trophy } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Trophy } from "lucide-react";
 import { BackHeader } from "@/components/BackHeader";
 import { MiniGrid } from "@/components/MiniGrid";
 import { formatWeekRange, weekdayName } from "@/lib/calendar";
@@ -13,7 +14,9 @@ type Side = "a" | "b";
 
 export default function HistoryPage() {
   const router = useRouter();
-  const [history, setHistory] = useState<HistoryResult | null>(null);
+  const [history, setHistory] = useState<
+    (HistoryResult & { cupTotals: { won: Record<string, number>; shared: number } }) | null
+  >(null);
   const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,10 +48,11 @@ export default function HistoryPage() {
 
   const playedAny = (w: WeekSummary) => w.days.some((d) => d.a.played || d.b.played);
   const completed = weeks.filter((w) => !w.isCurrent && playedAny(w));
+  // Totals include pre-site (WhatsApp) cups; everything below is site games only.
   const cups = {
-    a: completed.filter((w) => w.champion === "a").length,
-    b: completed.filter((w) => w.champion === "b").length,
-    shared: completed.filter((w) => w.champion === "tie").length,
+    a: history.cupTotals.won[players.a.name] ?? 0,
+    b: history.cupTotals.won[players.b.name] ?? 0,
+    shared: history.cupTotals.shared,
   };
   const totalCups = cups.a + cups.b + cups.shared;
 
@@ -60,7 +64,17 @@ export default function HistoryPage() {
       <BackHeader title="Cup history" />
 
       <section className="mt-6 rounded-[28px] bg-card shadow-soft px-6 pt-5 pb-6 rise-in">
-        <p className="text-[17px] font-semibold text-muted">Cups won, all time</p>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-semibold text-muted">Cups won, all time</p>
+          <Link
+            href="/cabinet"
+            className="flex items-center gap-1 rounded-full bg-accent-soft px-3 py-1 text-[14px] font-semibold text-ink"
+          >
+            <Trophy className="h-3.5 w-3.5 text-correct" strokeWidth={2.6} aria-hidden />
+            Cabinet
+            <ChevronRight className="h-3.5 w-3.5 text-muted" strokeWidth={2.6} aria-hidden />
+          </Link>
+        </div>
         <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-end">
           <div>
             <p className="text-[64px] font-bold leading-none" style={{ color: playerTheme(L.name).ink }}>
@@ -76,18 +90,14 @@ export default function HistoryPage() {
             <p className="mt-1 text-[17px] text-muted">{R.name}</p>
           </div>
         </div>
-        <div className="mt-4 flex h-[18px] gap-1.5">
+        <div className="mt-4 flex h-[18px] gap-1.5 overflow-hidden rounded-full">
           {totalCups === 0 ? (
-            <div className="flex-1 rounded-full bg-absent" />
+            <div className="flex-1 bg-absent" />
           ) : (
             <>
-              {cups[L.side] > 0 && (
-                <div className="rounded-l-full" style={{ flex: cups[L.side], background: playerTheme(L.name).color }} />
-              )}
+              {cups[L.side] > 0 && <div style={{ flex: cups[L.side], background: playerTheme(L.name).color }} />}
               {cups.shared > 0 && <div style={{ flex: cups.shared, background: "var(--absent)" }} />}
-              {cups[R.side] > 0 && (
-                <div className="rounded-r-full" style={{ flex: cups[R.side], background: playerTheme(R.name).color }} />
-              )}
+              {cups[R.side] > 0 && <div style={{ flex: cups[R.side], background: playerTheme(R.name).color }} />}
             </>
           )}
         </div>

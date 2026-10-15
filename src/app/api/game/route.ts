@@ -6,6 +6,7 @@ import { getSessionPlayerId } from "@/lib/session";
 import { getOrCreateDailyWord } from "@/lib/dailyWord";
 import { solveStreak } from "@/lib/calendar";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { hasNudged } from "@/lib/social";
 
 export async function GET() {
   await connection();
@@ -47,6 +48,7 @@ export async function GET() {
     finished,
     solution,
     solveStreak: solveStreak(recent ?? [], gameDate),
+    youNudged: await hasNudged(playerId, gameDate),
     you: you ? { id: you.id, name: you.name, roleLabel: you.role_label } : null,
   });
 }

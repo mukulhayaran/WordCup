@@ -1,0 +1,18 @@
+-- Editing pre-site ("legacy") cups. Copy the bit you need into the Supabase
+-- SQL Editor and run it. winner must be 'Mukul', 'Madhulika' or 'shared'.
+-- Dates are YYYY-MM-DD; use null when unknown. sort_order sets shelf order.
+
+-- See what's there:
+select era, label, winner, start_date, end_date, sort_order from legacy_cups order by era, sort_order;
+
+-- Add dates to an existing cup:
+update legacy_cups
+set start_date = '2025-03-03', end_date = '2025-03-09'
+where era = 'The WhatsApp era' and label = 'Cup I';
+
+-- Add another legacy cup:
+insert into legacy_cups (era, label, winner, start_date, end_date, sort_order)
+values ('The WhatsApp era', 'Cup III', 'Mukul', null, null, 3);
+
+-- Remove one:
+delete from legacy_cups where era = 'The WhatsApp era' and label = 'Cup III';

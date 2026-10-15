@@ -1,4 +1,6 @@
+import type { CabinetEra, Celebration } from "./cups";
 import type { LetterStatus } from "./feedback";
+import type { Reaction } from "./socialRules";
 
 export type StatusPlayer = {
   id: string;
@@ -13,6 +15,15 @@ export type StatusPlayer = {
 /** winnerIds: null = not revealed yet, [] = nobody scored, [id] = winner, [id, id] = tie. */
 export type WeekDayResult = { date: string; winnerIds: string[] | null };
 
+export type InboxMessage = { id: string; fromName: string; gameDate: string; body: string };
+
+/** Only present for the logged-in player. */
+export type ForYou = {
+  nudgeFrom: string | null;
+  messages: InboxMessage[];
+  celebration: Celebration | null;
+};
+
 export type StatusResponse = {
   gameDate: string;
   weekday: string;
@@ -23,6 +34,12 @@ export type StatusResponse = {
   weekDays: WeekDayResult[];
   players: StatusPlayer[];
   sessionPlayerId: string | null;
+  forYou: ForYou | null;
+};
+
+export type CabinetResponse = {
+  totals: { won: Record<string, number>; shared: number };
+  eras: CabinetEra[];
 };
 
 export type GuessRecord = { guess: string; feedback: LetterStatus[] };
@@ -37,6 +54,7 @@ export type GameResponse = {
   finished: boolean;
   solution: string | null;
   solveStreak: number;
+  youNudged: boolean;
   you: { id: string; name: string; roleLabel: string } | null;
 };
 
@@ -59,6 +77,14 @@ export type DuelResponse =
       ok: true;
       revealed: true;
       youId: string;
+      social: {
+        reactionByYou: Reaction | null;
+        reactionToYou: Reaction | null;
+        messageByYou: string | null;
+        messageToYou: string | null;
+        canMessage: boolean;
+        youScored: boolean;
+      };
       gameDate: string;
       weekday: string;
       weekNumber: number;

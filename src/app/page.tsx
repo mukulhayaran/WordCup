@@ -1,9 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Trophy } from "lucide-react";
+import { Check, ChevronRight, Trophy } from "lucide-react";
+import { CupCelebration } from "@/components/CupCelebration";
 import { CupScoreCard } from "@/components/CupScoreCard";
+import { MessageCard } from "@/components/MessageCard";
+import { NudgeBanner } from "@/components/NudgeBanner";
 import { PinPad } from "@/components/PinPad";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerCutout } from "@/components/PlayerCutout";
@@ -17,16 +21,31 @@ export default function LandingPage() {
   const [selected, setSelected] = useState<StatusPlayer | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [celebrationClosed, setCelebrationClosed] = useState(false);
 
   useEffect(() => {
     fetch("/api/status")
       .then((r) => r.json())
       .then((data: StatusResponse) => {
-        // Already remembered on this device -> skip straight to the game.
-        if (data.sessionPlayerId) router.replace("/play");
+        // Remembered on this device: go straight to the game, unless there's
+        // something waiting for you here (a champion, a nudge or a message).
+        const f = data.forYou;
+        const waiting = !!f && (!!f.celebration || !!f.nudgeFrom || f.messages.length > 0);
+        if (data.sessionPlayerId && !waiting) router.replace("/play");
         else setStatus(data);
       });
   }, [router]);
+
+  async function dismissMessage(id: string) {
+    setStatus((s) =>
+      s?.forYou ? { ...s, forYou: { ...s.forYou, messages: s.forYou.messages.filter((m) => m.id !== id) } } : s
+    );
+    await fetch("/api/message/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+  }
 
   const submitPin = useCallback(
     async (pin: string) => {
@@ -63,6 +82,8 @@ export default function LandingPage() {
     );
   }
 
+  const forYou = status.forYou;
+
   return (
     <main className="flex-1 flex flex-col w-full max-w-[480px] mx-auto px-5 pt-10 pb-8">
       <header className="text-center">
@@ -75,20 +96,40 @@ export default function LandingPage() {
         </p>
       </header>
 
+      {(forYou?.nudgeFrom || (forYou?.messages.length ?? 0) > 0) && (
+        <div className="mt-6 flex flex-col gap-3">
+          {forYou?.nudgeFrom && <NudgeBanner from={forYou.nudgeFrom} />}
+          {forYou?.messages.map((m) => (
+            <MessageCard key={m.id} message={m} onDismiss={dismissMessage} />
+          ))}
+        </div>
+      )}
+
       <div className="mt-7 rise-in">
         <CupScoreCard status={status} />
       </div>
+      <Link
+        href="/cabinet"
+        className="mt-3 flex items-center justify-center gap-1.5 self-center rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-ink"
+      >
+        <Trophy className="h-4 w-4 text-correct" strokeWidth={2.6} aria-hidden />
+        Trophy cabinet
+        <ChevronRight className="h-4 w-4 text-muted" strokeWidth={2.6} aria-hidden />
+      </Link>
 
-      <h2 className="mt-10 text-center text-[30px] font-bold text-ink">Who&apos;s playing?</h2>
+      <h2 className="mt-9 text-center text-[30px] font-bold text-ink">Who&apos;s playing?</h2>
 
       <div className="mt-[76px] grid grid-cols-2 gap-4">
         {inDisplayOrder(status.players).map((p) => {
           const theme = playerTheme(p.name);
+          const isYou = p.id === status.sessionPlayerId;
           return (
             <button
               key={p.id}
               type="button"
               onClick={() => {
+                // Already logged in as this player on this device: no PIN needed.
+                if (isYou) return router.push("/play");
                 setSelected(p);
                 setPinError(null);
               }}
@@ -98,6 +139,11 @@ export default function LandingPage() {
               <div className="absolute -top-[78px] left-1/2 -translate-x-1/2">
                 <PlayerCutout name={p.name} avatarInitial={p.avatarInitial} avatarUrl={p.avatarUrl} />
               </div>
+              {isYou && (
+                <span className="absolute right-3 top-3 rounded-full bg-ink px-2.5 py-0.5 text-[12px] font-semibold text-white">
+                  You
+                </span>
+              )}
               <span className="text-[26px] font-bold text-ink">{p.name}</span>
               {p.playedToday ? (
                 <span className="mt-4 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--madhulika-soft)] px-3 py-1.5 text-[14px] font-semibold text-[var(--madhulika-ink)]">
@@ -116,6 +162,18 @@ export default function LandingPage() {
       </div>
 
       <p className="mt-auto pt-12 text-center text-[17px] text-muted">Tap your card to play</p>
+
+      {forYou?.celebration && !celebrationClosed && (
+        <CupCelebration
+          celebration={forYou.celebration}
+          players={status.players}
+          onStartWeek={() => {
+            setCelebrationClosed(true);
+            router.push("/play");
+          }}
+          onSeeCabinet={() => router.push("/cabinet")}
+        />
+      )}
 
       {selected && (
         <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={`Enter ${selected.name}'s PIN`}>

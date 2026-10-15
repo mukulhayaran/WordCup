@@ -1,89 +1,63 @@
 import { getOrCreateDailyWord } from "./dailyWord";
-import { isWinningGuess, scoreGuess, type LetterStatus } from "./feedback";
+import {
+  submitGuessWith,
+  type GameResultRow,
+  type GameStore,
+  type SubmitGuessResult,
+} from "./guessCore";
 import { supabaseAdmin } from "./supabaseAdmin";
-import { isAllowedGuess } from "./words";
 
-export type GuessRecord = { guess: string; feedback: LetterStatus[] };
+export type { GameResultRow, GuessRecord, SubmitGuessResult } from "./guessCore";
 
-export type GameResultRow = {
-  player_id: string;
-  game_date: string;
-  guesses: GuessRecord[];
-  num_guesses: number | null;
-  status: "in_progress" | "won" | "lost";
-  finished_at: string | null;
-};
-
-const MAX_GUESSES = 6;
+const COLUMNS = "player_id, game_date, guesses, num_guesses, status, finished_at";
 
 export async function getGameResult(
   playerId: string,
   gameDate: string
 ): Promise<GameResultRow | null> {
-  const db = supabaseAdmin();
-  const { data } = await db
+  const { data } = await supabaseAdmin()
     .from("game_results")
-    .select("player_id, game_date, guesses, num_guesses, status, finished_at")
+    .select(COLUMNS)
     .eq("player_id", playerId)
     .eq("game_date", gameDate)
     .maybeSingle();
   return data ?? null;
 }
 
-export type SubmitGuessResult =
-  | { ok: true; row: GameResultRow; solutionRevealed: string | null }
-  | { ok: false; reason: "not_a_word" }
-  | { ok: false; reason: "already_finished" };
+const supabaseGameStore: GameStore = {
+  get: getGameResult,
 
-export async function submitGuess(
-  playerId: string,
-  gameDate: string,
-  rawGuess: string
-): Promise<SubmitGuessResult> {
-  const guess = rawGuess.trim().toLowerCase();
-  if (!isAllowedGuess(guess)) {
-    return { ok: false, reason: "not_a_word" };
-  }
+  async insertFirst(row) {
+    const { data, error } = await supabaseAdmin().from("game_results").insert(row).select(COLUMNS).single();
+    // 23505 = unique_violation: another request already created today's row.
+    if (error?.code === "23505") return "conflict";
+    if (error || !data) throw error ?? new Error("Failed to save guess");
+    return data;
+  },
 
-  const existing = await getGameResult(playerId, gameDate);
-  if (existing && existing.status !== "in_progress") {
-    return { ok: false, reason: "already_finished" };
-  }
+  async updateIfGuessCount(row, expectedCount) {
+    // guess_count is a database-generated column (length of `guesses`), so this
+    // update only lands if the board is exactly as we read it.
+    const { data, error } = await supabaseAdmin()
+      .from("game_results")
+      .update({ ...row, updated_at: new Date().toISOString() })
+      .eq("player_id", row.player_id)
+      .eq("game_date", row.game_date)
+      .eq("status", "in_progress")
+      .eq("guess_count", expectedCount)
+      .select(COLUMNS);
+    if (error) throw error;
+    return data && data.length === 1 ? data[0] : "conflict";
+  },
+};
 
-  const { solution } = await getOrCreateDailyWord(gameDate);
-  const priorGuesses = existing?.guesses ?? [];
-  const feedback = scoreGuess(guess, solution);
-  const guesses: GuessRecord[] = [...priorGuesses, { guess, feedback }];
-
-  const won = isWinningGuess(feedback);
-  const lost = !won && guesses.length >= MAX_GUESSES;
-  const status: GameResultRow["status"] = won ? "won" : lost ? "lost" : "in_progress";
-  const finished = won || lost;
-
-  const db = supabaseAdmin();
-  const { data: row, error } = await db
-    .from("game_results")
-    .upsert(
-      {
-        player_id: playerId,
-        game_date: gameDate,
-        guesses,
-        num_guesses: finished ? guesses.length : null,
-        status,
-        finished_at: finished ? new Date().toISOString() : null,
-      },
-      { onConflict: "player_id,game_date" }
-    )
-    .select("player_id, game_date, guesses, num_guesses, status, finished_at")
-    .single();
-
-  if (error || !row) throw error ?? new Error("Failed to save guess");
-
-  return {
-    ok: true,
-    row,
-    solutionRevealed: finished ? solution : null,
-  };
+export function submitGuess(playerId: string, gameDate: string, rawGuess: string): Promise<SubmitGuessResult> {
+  return submitGuessWith(
+    { store: supabaseGameStore, getSolution: async (d) => (await getOrCreateDailyWord(d)).solution },
+    playerId,
+    gameDate,
+    rawGuess
+  );
 }
 
 export type PlayerDayStatus = {

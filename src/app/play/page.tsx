@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { ArrowLeftRight, Clock, Copy, Trophy } from "lucide-react";
 import { Board, FLIP_DURATION_MS, FLIP_STAGGER_MS } from "@/components/Board";
 import { Confetti } from "@/components/Confetti";
+import { CupCelebration } from "@/components/CupCelebration";
 import { Keyboard } from "@/components/Keyboard";
+import { NudgeBanner } from "@/components/NudgeBanner";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { WeekDots } from "@/components/WeekDots";
 import { TILE_BG, TILE_FG, prefersReducedMotion, vibrate } from "@/components/tiles";
@@ -29,6 +31,7 @@ export default function PlayPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  const [celebrationClosed, setCelebrationClosed] = useState(false);
 
   const loadAll = useCallback(async () => {
     const [gameRes, statusRes] = await Promise.all([fetch("/api/game"), fetch("/api/status")]);
@@ -94,7 +97,8 @@ export default function PlayPage() {
 
       if (!data.ok) {
         if (data.reason === "not_a_word") rejectGuess("Not in word list");
-        else if (data.reason === "already_finished") loadAll();
+        // Another tab or a double tap got there first — show the board as saved.
+        else if (data.reason === "already_finished" || data.reason === "conflict") loadAll();
         else showToast("Something went wrong — try again");
         return;
       }
@@ -155,17 +159,32 @@ export default function PlayPage() {
 
   const you = status.players.find((p) => p.id === game.you?.id) ?? null;
   const opponent = status.players.find((p) => p.id !== game.you?.id) ?? null;
+  const nudgeFrom = game.finished ? null : (status.forYou?.nudgeFrom ?? null);
+  const celebration = celebrationClosed ? null : (status.forYou?.celebration ?? null);
 
   return (
     <>
       {celebrate && <Confetti />}
+      {celebration && (
+        <CupCelebration
+          celebration={celebration}
+          players={status.players}
+          onStartWeek={() => setCelebrationClosed(true)}
+          onSeeCabinet={() => router.push("/cabinet")}
+        />
+      )}
       {game.finished && !holdBoard ? (
         <FinishedView game={game} status={status} opponent={opponent} onSwitch={switchPlayer} onRefresh={loadAll} />
       ) : (
         <main
           className="flex-1 flex flex-col items-center w-full max-w-[480px] mx-auto px-4 pt-5 pb-3"
-          // Tiles shrink on short screens so the keyboard always stays on-screen.
-          style={{ "--tile": "clamp(38px, min(15.5vw, calc((100dvh - 490px) / 6)), 62px)" } as CSSProperties}
+          // Tiles shrink on short screens so the keyboard always stays on-screen
+          // (with a little less room when the nudge banner is showing).
+          style={
+            {
+              "--tile": `clamp(38px, min(15.5vw, calc((100dvh - ${nudgeFrom ? 556 : 490}px) / 6)), 62px)`,
+            } as CSSProperties
+          }
         >
           <header className="w-full flex items-center justify-between px-1">
             <div className="flex items-center gap-3">
@@ -185,6 +204,12 @@ export default function PlayPage() {
               <Clock className="h-6 w-6" strokeWidth={2.4} />
             </Link>
           </header>
+
+          {nudgeFrom && (
+            <div className="mt-3 w-full">
+              <NudgeBanner from={nudgeFrom} compact />
+            </div>
+          )}
 
           {you && opponent && (
             <section className="mt-3 w-full rounded-[28px] bg-card shadow-soft px-4 pt-3 pb-2.5">
@@ -309,6 +334,22 @@ function FinishedView({
   const won = game.status === "won";
   const yourName = game.you?.name ?? "";
   const oppTheme = playerTheme(opponent?.name ?? "");
+  const [nudged, setNudged] = useState(game.youNudged);
+  const [nudging, setNudging] = useState(false);
+
+  async function nudge() {
+    setNudging(true);
+    const res = await fetch("/api/nudge", { method: "POST" });
+    const data = await res.json();
+    setNudging(false);
+    // "already_nudged" also means the nudge is out there — show it as sent.
+    if (data.ok || data.reason === "already_nudged") {
+      setNudged(true);
+      vibrate(40);
+    } else if (data.reason === "they_finished") {
+      onRefresh();
+    }
+  }
 
   return (
     <main className="relative flex-1 w-full max-w-[480px] mx-auto px-4 pt-5 pb-6 overflow-hidden">
@@ -404,15 +445,18 @@ function FinishedView({
                 <p className="text-[17px] font-semibold text-ink">{opponent.name} hasn&apos;t played yet</p>
                 <p className="text-[14px] text-muted">You&apos;ll see the grids once {opponent.name} is done</p>
               </div>
-              {/* Visual only for now — nudges aren't wired up yet. */}
               <button
                 type="button"
-                aria-disabled="true"
-                title="Coming soon"
-                className="shrink-0 rounded-full border-2 bg-card px-5 py-2.5 text-[16px] font-semibold"
-                style={{ borderColor: oppTheme.color, color: oppTheme.ink }}
+                onClick={nudge}
+                disabled={nudged || nudging}
+                className="shrink-0 rounded-full border-2 px-5 py-2.5 text-[16px] font-semibold transition active:scale-95 disabled:active:scale-100"
+                style={
+                  nudged
+                    ? { borderColor: oppTheme.soft, background: oppTheme.soft, color: oppTheme.ink }
+                    : { borderColor: oppTheme.color, background: "var(--card)", color: oppTheme.ink }
+                }
               >
-                Nudge
+                {nudged ? "Nudged ✓" : "Nudge"}
               </button>
             </>
           )}

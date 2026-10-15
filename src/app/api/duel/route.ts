@@ -6,6 +6,8 @@ import { todayGameDate, weekRangeForGameDate } from "@/lib/gameDate";
 import { getGameResult } from "@/lib/game";
 import { isDayRevealed, type FinishStatus } from "@/lib/reveal";
 import { getSessionPlayerId } from "@/lib/session";
+import { getMessageFrom, getReaction } from "@/lib/social";
+import { canSendMessage } from "@/lib/socialRules";
 import { getCupWeekNumber, getWeekBreakdown } from "@/lib/weekScore";
 
 /** Today's head-to-head. Grids are only returned once the day is revealed. */
@@ -55,10 +57,28 @@ export async function GET() {
     weekPoints,
   });
 
+  const you = playerId === a.id ? a : b;
+  const them = playerId === a.id ? b : a;
+  const yourPoints = (playerId === a.id ? today?.points.a : today?.points.b) ?? 0;
+  const [reactionByYou, reactionToYou, messageByYou, messageToYou] = await Promise.all([
+    getReaction(you.id, gameDate),
+    getReaction(them.id, gameDate),
+    getMessageFrom(you.id, gameDate),
+    getMessageFrom(them.id, gameDate),
+  ]);
+
   return NextResponse.json({
     ok: true,
     revealed: true,
     youId: playerId,
+    social: {
+      reactionByYou,
+      reactionToYou,
+      messageByYou: messageByYou?.body ?? null,
+      messageToYou: messageToYou?.body ?? null,
+      canMessage: canSendMessage({ revealed: true, senderPoints: yourPoints, alreadySent: !!messageByYou }).ok,
+      youScored: yourPoints > 0,
+    },
     gameDate,
     weekday: weekdayName(gameDate),
     weekNumber: await getCupWeekNumber(weekStart),
