@@ -37,12 +37,6 @@ export type StatusResponse = {
   forYou: ForYou | null;
 };
 
-/** What the status API returns to someone who isn't logged in: just enough to log in. */
-export type LoggedOutStatus = {
-  sessionPlayerId: null;
-  players: Array<{ id: string; name: string; avatarInitial: string }>;
-};
-
 export type CabinetResponse = {
   totals: { won: Record<string, number>; shared: number };
   eras: CabinetEra[];

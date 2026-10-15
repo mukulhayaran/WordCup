@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import { BackHeader } from "@/components/BackHeader";
 import { TrophyIcon } from "@/components/TrophyIcon";
@@ -10,18 +9,13 @@ import { SHARED, type CabinetTrophy } from "@/lib/cups";
 import { inDisplayOrder, playerTheme } from "@/lib/theme";
 
 export default function CabinetPage() {
-  const router = useRouter();
   const [cabinet, setCabinet] = useState<CabinetResponse | null>(null);
 
   useEffect(() => {
-    fetch("/api/cabinet").then(async (res) => {
-      if (res.status === 401) {
-        router.replace("/");
-        return;
-      }
-      setCabinet(await res.json());
-    });
-  }, [router]);
+    fetch("/api/cabinet")
+      .then((r) => r.json())
+      .then(setCabinet);
+  }, []);
 
   if (!cabinet) {
     return (
