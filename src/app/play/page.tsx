@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeftRight, Clock, Copy, Trophy } from "lucide-react";
@@ -14,36 +14,178 @@ import { WeekDots } from "@/components/WeekDots";
 import { TILE_BG, TILE_FG, prefersReducedMotion, vibrate } from "@/components/tiles";
 import type { GameResponse, GuessRecord, StatusPlayer, StatusResponse } from "@/lib/apiTypes";
 import { msUntilNextGameDay } from "@/lib/calendar";
-import { toEmojiRow } from "@/lib/feedback";
+import { scoreGuess, toEmojiRow } from "@/lib/feedback";
+import {
+  boardMatches,
+  boardStatus,
+  loadQueue,
+  mergeWithServer,
+  saveQueue,
+  type PendingGuess,
+} from "@/lib/pendingGuesses";
 import { playerTheme } from "@/lib/theme";
+import { isAllowedGuess } from "@/lib/words";
 
 const REVEAL_MS = 4 * FLIP_STAGGER_MS + FLIP_DURATION_MS;
+const FIRST_RETRY_MS = 2000;
+const MAX_RETRY_MS = 30000;
 
 export default function PlayPage() {
   const router = useRouter();
   const [game, setGame] = useState<GameResponse | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  // The server's own word on whether today's game is over. The result screen
+  // waits for this, not for the phone's local check.
+  const [serverFinished, setServerFinished] = useState(false);
+  const [queue, setQueueState] = useState<PendingGuess[]>([]);
   const [currentGuess, setCurrentGuess] = useState("");
   const [revealingRow, setRevealingRow] = useState<number | null>(null);
   const [holdBoard, setHoldBoard] = useState(false);
   const [keyboardGuesses, setKeyboardGuesses] = useState<GuessRecord[]>([]);
   const [shaking, setShaking] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const [celebrationClosed, setCelebrationClosed] = useState(false);
 
+  // Read from async code (saving, reloading), which must see the latest values.
+  const gameRef = useRef<GameResponse | null>(null);
+  const queueRef = useRef<PendingGuess[]>([]);
+  const playerIdRef = useRef<string | null>(null);
+  const revealingRef = useRef(false);
+  const flushingRef = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelay = useRef(FIRST_RETRY_MS);
+  const flushRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
+  useEffect(() => {
+    revealingRef.current = revealingRow !== null;
+  }, [revealingRow]);
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    setTimeout(() => setToast((t) => (t === text ? null : t)), 1600);
+  }, []);
+
+  /** Unsaved guesses live in state (for the "Saving…" pill), a ref and localStorage. */
+  const setQueue = useCallback((q: PendingGuess[]) => {
+    queueRef.current = q;
+    setQueueState(q);
+    if (playerIdRef.current) saveQueue(playerIdRef.current, q);
+  }, []);
+
   const loadAll = useCallback(async () => {
-    const [gameRes, statusRes] = await Promise.all([fetch("/api/game"), fetch("/api/status")]);
-    if (gameRes.status === 401) {
-      router.replace("/");
-      return;
+    try {
+      const [gameRes, statusRes] = await Promise.all([fetch("/api/game"), fetch("/api/status")]);
+      if (gameRes.status === 401) {
+        router.replace("/");
+        return;
+      }
+      if (!gameRes.ok || !statusRes.ok) throw new Error("load failed");
+      const g: GameResponse = await gameRes.json();
+      const s: StatusResponse = await statusRes.json();
+
+      // Put any guesses still waiting on this phone back on top of the saved
+      // board. If the two disagree, the server's board wins.
+      const pid = g.you?.id ?? null;
+      const firstLoad = playerIdRef.current === null;
+      playerIdRef.current = pid;
+      const pending = firstLoad && pid ? loadQueue(pid) : queueRef.current;
+      const merged = g.solution ? mergeWithServer(g.guesses, pending, g.gameDate, g.solution) : "reload";
+      const board = merged === "reload" ? g.guesses : merged.board;
+      if (merged === "reload" && pending.length > 0) showToast("Updated from your saved game");
+      setQueue(merged === "reload" ? [] : merged.queue);
+
+      const local = boardStatus(board);
+      const localFinished = local === "won" || local === "lost";
+      setGame(
+        g.finished
+          ? g
+          : {
+              ...g,
+              guesses: board,
+              status: local,
+              finished: localFinished,
+              numGuesses: localFinished ? board.length : null,
+            }
+      );
+      setServerFinished(g.finished);
+      if (!revealingRef.current) setKeyboardGuesses(board);
+      setStatus(s);
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
     }
-    const g: GameResponse = await gameRes.json();
-    setGame(g);
-    setKeyboardGuesses(g.guesses);
-    setStatus(await statusRes.json());
-  }, [router]);
+  }, [router, setQueue, showToast]);
+
+  /** Sends unsaved guesses to the server one at a time, oldest first. */
+  const flush = useCallback(async () => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
+
+    const retryLater = () => {
+      retryTimer.current = setTimeout(() => flushRef.current(), retryDelay.current);
+      retryDelay.current = Math.min(retryDelay.current * 2, MAX_RETRY_MS);
+    };
+
+    try {
+      while (queueRef.current.length > 0) {
+        const next = queueRef.current[0];
+        let res: Response;
+        let data: { ok?: boolean; guesses?: GuessRecord[] } | null;
+        try {
+          res = await fetch("/api/guess", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(next),
+          });
+          data = await res.json().catch(() => null);
+        } catch {
+          retryLater(); // offline or the request failed: keep it and try again
+          return;
+        }
+
+        if (res.status === 401) {
+          router.replace("/");
+          return;
+        }
+        if (res.status >= 500 || !data) {
+          retryLater();
+          return;
+        }
+
+        if (data.ok && data.guesses) {
+          retryDelay.current = FIRST_RETRY_MS;
+          setQueue(queueRef.current.filter((p) => p !== next));
+          const localBoard = gameRef.current?.guesses ?? [];
+          if (!boardMatches(data.guesses, localBoard)) {
+            setQueue([]);
+            showToast("Updated from your saved game");
+            await loadAll();
+            return;
+          }
+          continue;
+        }
+
+        // The server turned it down (another device, a new day, …): its board wins.
+        setQueue([]);
+        showToast("Updated from your saved game");
+        await loadAll();
+        return;
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [router, setQueue, showToast, loadAll]);
+
+  useEffect(() => {
+    flushRef.current = () => void flush();
+  }, [flush]);
 
   useEffect(() => {
     // Async fetch; state is only set after the responses arrive.
@@ -51,10 +193,36 @@ export default function PlayPage() {
     loadAll();
   }, [loadAll]);
 
-  const showToast = useCallback((text: string) => {
-    setToast(text);
-    setTimeout(() => setToast((t) => (t === text ? null : t)), 1600);
+  // Whenever something is waiting to be saved, try to send it.
+  useEffect(() => {
+    if (queue.length > 0) flushRef.current();
+  }, [queue.length]);
+
+  // Try again straight away when the connection comes back or the tab is reopened.
+  useEffect(() => {
+    const retry = () => {
+      if (document.visibilityState === "visible" && queueRef.current.length > 0) flushRef.current();
+    };
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", retry);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
   }, []);
+
+  // Finished on the phone and every guess saved: ask the server to confirm the
+  // result before showing it, retrying until it answers.
+  const awaitingConfirm = !!game?.finished && !serverFinished && queue.length === 0 && !holdBoard;
+  useEffect(() => {
+    if (!awaitingConfirm) return;
+    // Async fetch; state is only set after the responses arrive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAll();
+    const id = setInterval(loadAll, 5000);
+    return () => clearInterval(id);
+  }, [awaitingConfirm, loadAll]);
 
   const rejectGuess = useCallback(
     (text: string) => {
@@ -65,10 +233,10 @@ export default function PlayPage() {
     [showToast]
   );
 
-  const busy = submitting || revealingRow !== null || holdBoard;
+  const busy = revealingRow !== null || holdBoard;
 
   const onKey = useCallback(
-    async (key: string) => {
+    (key: string) => {
       if (!game || game.finished || busy) return;
 
       if (key === "BACKSPACE") {
@@ -85,74 +253,82 @@ export default function PlayPage() {
         rejectGuess("Not enough letters");
         return;
       }
-
-      setSubmitting(true);
-      const res = await fetch("/api/guess", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ guess: currentGuess }),
-      });
-      const data = await res.json();
-      setSubmitting(false);
-
-      if (!data.ok) {
-        if (data.reason === "not_a_word") rejectGuess("Not in word list");
-        // Another tab or a double tap got there first — show the board as saved.
-        else if (data.reason === "already_finished" || data.reason === "conflict") loadAll();
-        else showToast("Something went wrong — try again");
+      if (!isAllowedGuess(currentGuess)) {
+        rejectGuess("Not in word list");
+        return;
+      }
+      if (!game.solution) {
+        showToast("Something went wrong — try again");
         return;
       }
 
-      const finished = data.status === "won" || data.status === "lost";
+      // Checked right here on the phone, with the same function the server
+      // uses; the server re-checks and saves it in the background.
+      const guesses = [...game.guesses, { guess: currentGuess, feedback: scoreGuess(currentGuess, game.solution) }];
+      const result = boardStatus(guesses);
+      const finished = result === "won" || result === "lost";
       const reduced = prefersReducedMotion();
       const revealMs = reduced ? 0 : REVEAL_MS;
 
-      setGame({
-        ...game,
-        status: data.status,
-        guesses: data.guesses,
-        numGuesses: data.numGuesses,
-        finished,
-        solution: data.solution,
-      });
+      setGame({ ...game, status: result, guesses, numGuesses: finished ? guesses.length : null, finished });
+      setQueue([...queueRef.current, { gameDate: game.gameDate, index: guesses.length - 1, guess: currentGuess }]);
       setCurrentGuess("");
-      setRevealingRow(data.guesses.length - 1);
+      setRevealingRow(guesses.length - 1);
       if (finished) setHoldBoard(true);
 
       setTimeout(() => {
         setRevealingRow(null);
-        setKeyboardGuesses(data.guesses);
+        setKeyboardGuesses(guesses);
       }, revealMs);
 
       if (finished) {
         setTimeout(
           () => {
             setHoldBoard(false);
-            if (data.status === "won") {
+            if (result === "won") {
               vibrate([40, 60, 120]);
               if (!reduced) {
                 setCelebrate(true);
                 setTimeout(() => setCelebrate(false), 4000);
               }
             }
-            loadAll();
           },
           revealMs + (reduced ? 0 : 700)
         );
       }
     },
-    [game, busy, currentGuess, rejectGuess, showToast, loadAll]
+    [game, busy, currentGuess, rejectGuess, showToast, setQueue]
   );
 
   async function switchPlayer() {
-    await fetch("/api/logout", { method: "POST" });
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch {
+      // Go back anyway; the landing page will show who's still logged in.
+    }
     router.push("/");
   }
 
   if (!game || !status) {
     return (
-      <main className="flex-1 flex items-center justify-center">
-        <p className="text-muted">Loading…</p>
+      <main className="flex-1 flex flex-col items-center justify-center gap-4">
+        {loadError ? (
+          <>
+            <p className="text-muted">Couldn&apos;t connect.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoadError(false);
+                loadAll();
+              }}
+              className="rounded-full bg-correct px-5 py-2.5 text-[16px] font-semibold text-white"
+            >
+              Try again
+            </button>
+          </>
+        ) : (
+          <p className="text-muted">Loading…</p>
+        )}
       </main>
     );
   }
@@ -173,7 +349,7 @@ export default function PlayPage() {
           onSeeCabinet={() => router.push("/cabinet")}
         />
       )}
-      {game.finished && !holdBoard ? (
+      {game.finished && serverFinished && queue.length === 0 && !holdBoard ? (
         <FinishedView game={game} status={status} opponent={opponent} onSwitch={switchPlayer} onRefresh={loadAll} />
       ) : (
         <main
@@ -265,6 +441,15 @@ export default function PlayPage() {
               shaking={shaking}
               onShakeEnd={() => setShaking(false)}
             />
+            {(queue.length > 0 || (game.finished && !serverFinished)) && (
+              <div
+                role="status"
+                className="absolute bottom-0 inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-muted"
+              >
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-correct" aria-hidden />
+                {game.finished ? "Saving your result…" : "Saving…"}
+              </div>
+            )}
           </div>
 
           <Keyboard guesses={keyboardGuesses} onKey={onKey} disabled={busy} />
@@ -339,15 +524,20 @@ function FinishedView({
 
   async function nudge() {
     setNudging(true);
-    const res = await fetch("/api/nudge", { method: "POST" });
-    const data = await res.json();
-    setNudging(false);
-    // "already_nudged" also means the nudge is out there — show it as sent.
-    if (data.ok || data.reason === "already_nudged") {
-      setNudged(true);
-      vibrate(40);
-    } else if (data.reason === "they_finished") {
-      onRefresh();
+    try {
+      const res = await fetch("/api/nudge", { method: "POST" });
+      const data = await res.json();
+      // "already_nudged" also means the nudge is out there — show it as sent.
+      if (data.ok || data.reason === "already_nudged") {
+        setNudged(true);
+        vibrate(40);
+      } else if (data.reason === "they_finished") {
+        onRefresh();
+      }
+    } catch {
+      // Offline or the request failed: the button stays tappable to try again.
+    } finally {
+      setNudging(false);
     }
   }
 

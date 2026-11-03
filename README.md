@@ -1,5 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## How guessing works
+
+It works like real Wordle: the phone checks your guesses, and the server keeps the official record.
+
+- When you open the game, the server sends your phone **today's word only**, never another day's. The phone checks each guess against the word list and colours it instantly, even without a connection.
+- Every guess is also sent to the server in the background. The server checks it again and saves it, with the same rules as before: one attempt a day, at most 6 guesses, and protection against a double-tapped Enter.
+- **The server's saved board is the official one.** Scores, the weekly cup, the duel and history all use only what the server saved. If the phone and the server ever disagree, the phone reloads the server's board.
+- If a guess can't be sent (offline, bad signal), it waits on the phone and is sent automatically when the connection comes back. A small "Saving…" label shows while anything is unsaved. The result screen appears only after the server has confirmed every guess.
+- Trade-off: a curious player could dig their own day's word out of the browser's developer tools. That only spoils your own game, and it never shows the other player's result. Their result stays hidden until you've both finished, exactly as before.
+
 ## Getting Started
 
 First, run the development server:

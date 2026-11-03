@@ -23,9 +23,14 @@ export default function LandingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [celebrationClosed, setCelebrationClosed] = useState(false);
 
-  useEffect(() => {
+  const [loadError, setLoadError] = useState(false);
+
+  const loadStatus = useCallback(() => {
     fetch("/api/status")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("status failed");
+        return r.json();
+      })
       .then((data: StatusResponse) => {
         // Remembered on this device: go straight to the game, unless there's
         // something waiting for you here (a champion, a nudge or a message).
@@ -33,18 +38,27 @@ export default function LandingPage() {
         const waiting = !!f && (!!f.celebration || !!f.nudgeFrom || f.messages.length > 0);
         if (data.sessionPlayerId && !waiting) router.replace("/play");
         else setStatus(data);
-      });
+      })
+      .catch(() => setLoadError(true));
   }, [router]);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
 
   async function dismissMessage(id: string) {
     setStatus((s) =>
       s?.forYou ? { ...s, forYou: { ...s.forYou, messages: s.forYou.messages.filter((m) => m.id !== id) } } : s
     );
-    await fetch("/api/message/dismiss", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    try {
+      await fetch("/api/message/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+    } catch {
+      // It's already hidden here; it may show again next time, which is fine.
+    }
   }
 
   const submitPin = useCallback(
@@ -52,32 +66,53 @@ export default function LandingPage() {
       if (!selected) return;
       setSubmitting(true);
       setPinError(null);
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: selected.name, pin }),
-      });
-      const data = await res.json();
-      setSubmitting(false);
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: selected.name, pin }),
+        });
+        const data = await res.json();
 
-      if (data.ok) {
-        router.push("/play");
-        return;
+        if (data.ok) {
+          router.push("/play");
+          return;
+        }
+        vibrate(120);
+        setPinError(
+          data.reason === "locked"
+            ? `Too many wrong tries. Try again in ${data.minutesRemaining} min.`
+            : "That's not the PIN. Try again."
+        );
+      } catch {
+        setPinError("Couldn't connect — try again.");
+      } finally {
+        setSubmitting(false);
       }
-      vibrate(120);
-      setPinError(
-        data.reason === "locked"
-          ? `Too many wrong tries. Try again in ${data.minutesRemaining} min.`
-          : "That's not the PIN. Try again."
-      );
     },
     [selected, router]
   );
 
   if (!status) {
     return (
-      <main className="flex-1 flex items-center justify-center">
-        <p className="text-muted">Loading…</p>
+      <main className="flex-1 flex flex-col items-center justify-center gap-4">
+        {loadError ? (
+          <>
+            <p className="text-muted">Couldn&apos;t connect.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoadError(false);
+                loadStatus();
+              }}
+              className="rounded-full bg-correct px-5 py-2.5 text-[16px] font-semibold text-white"
+            >
+              Try again
+            </button>
+          </>
+        ) : (
+          <p className="text-muted">Loading…</p>
+        )}
       </main>
     );
   }

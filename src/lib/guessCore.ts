@@ -30,18 +30,39 @@ export interface GameStore {
 
 export type SubmitGuessResult =
   | { ok: true; row: GameResultRow; solutionRevealed: string | null }
-  | { ok: false; reason: "not_a_word" | "already_finished" | "conflict" };
+  | { ok: false; reason: "not_a_word" | "already_finished" | "conflict" | "mismatch" };
 
+/**
+ * `index` is where the phone thinks this guess goes on the board (0–5). With
+ * it, a resent guess the server already saved comes back ok instead of being
+ * added twice, and a board that disagrees with the saved one is a "mismatch".
+ */
 export async function submitGuessWith(
   deps: { store: GameStore; getSolution: (gameDate: string) => Promise<string>; now?: () => Date },
   playerId: string,
   gameDate: string,
-  rawGuess: string
+  rawGuess: string,
+  index?: number
 ): Promise<SubmitGuessResult> {
   const guess = rawGuess.trim().toLowerCase();
   if (!isAllowedGuess(guess)) return { ok: false, reason: "not_a_word" };
 
   const existing = await deps.store.get(playerId, gameDate);
+
+  if (index !== undefined) {
+    const saved = existing?.guesses ?? [];
+    if (index < saved.length) {
+      if (saved[index].guess !== guess) return { ok: false, reason: "mismatch" };
+      const finished = existing!.status !== "in_progress";
+      return {
+        ok: true,
+        row: existing!,
+        solutionRevealed: finished ? await deps.getSolution(gameDate) : null,
+      };
+    }
+    if (index > saved.length) return { ok: false, reason: "mismatch" };
+  }
+
   if (existing && existing.status !== "in_progress") return { ok: false, reason: "already_finished" };
 
   const priorGuesses = existing?.guesses ?? [];

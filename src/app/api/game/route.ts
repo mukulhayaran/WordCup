@@ -28,8 +28,10 @@ export async function GET() {
 
   const finished = row?.status === "won" || row?.status === "lost";
 
-  // The answer is only ever sent once this player's own game is over.
-  const solution = finished ? (await getOrCreateDailyWord(gameDate)).solution : null;
+  // Today's answer (never another day's) goes to the logged-in player so the
+  // phone can colour guesses instantly. The server still re-checks and saves
+  // every guess, and only its saved board counts.
+  const solution = (await getOrCreateDailyWord(gameDate)).solution;
 
   const { data: recent } = await supabaseAdmin()
     .from("game_results")

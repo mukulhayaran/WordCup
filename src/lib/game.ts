@@ -51,12 +51,18 @@ const supabaseGameStore: GameStore = {
   },
 };
 
-export function submitGuess(playerId: string, gameDate: string, rawGuess: string): Promise<SubmitGuessResult> {
+export function submitGuess(
+  playerId: string,
+  gameDate: string,
+  rawGuess: string,
+  index?: number
+): Promise<SubmitGuessResult> {
   return submitGuessWith(
     { store: supabaseGameStore, getSolution: async (d) => (await getOrCreateDailyWord(d)).solution },
     playerId,
     gameDate,
-    rawGuess
+    rawGuess,
+    index
   );
 }
 

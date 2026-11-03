@@ -77,6 +77,48 @@ describe("submitGuessWith — simultaneous submissions", () => {
   });
 });
 
+describe("submitGuessWith — retries from the phone's queue (with index)", () => {
+  it("a resent guess the server already saved comes back ok and isn't added twice", async () => {
+    const store = memoryStore();
+    expect((await submitGuessWith(deps(store), P, D, "least", 0)).ok).toBe(true);
+    const again = await submitGuessWith(deps(store), P, D, "least", 0);
+    expect(again.ok && again.row.guesses.map((g) => g.guess)).toEqual(["least"]);
+    expect(store.rows.get(`${P}|${D}`)!.guesses).toHaveLength(1);
+  });
+
+  it("a resent winning guess after the game is over still comes back ok", async () => {
+    const store = memoryStore();
+    await submitGuessWith(deps(store), P, D, "least", 0);
+    await submitGuessWith(deps(store), P, D, "crane", 1);
+    const again = await submitGuessWith(deps(store), P, D, "crane", 1);
+    expect(again.ok && again.row.status).toBe("won");
+    expect(again.ok && again.solutionRevealed).toBe("crane");
+    expect(store.rows.get(`${P}|${D}`)!.guesses).toHaveLength(2);
+  });
+
+  it("a different word at a saved position is a mismatch", async () => {
+    const store = memoryStore();
+    await submitGuessWith(deps(store), P, D, "least", 0);
+    expect(await submitGuessWith(deps(store), P, D, "heart", 0)).toEqual({ ok: false, reason: "mismatch" });
+    expect(store.rows.get(`${P}|${D}`)!.guesses.map((g) => g.guess)).toEqual(["least"]);
+  });
+
+  it("a guess further ahead than the saved board is a mismatch", async () => {
+    const store = memoryStore();
+    expect(await submitGuessWith(deps(store), P, D, "least", 1)).toEqual({ ok: false, reason: "mismatch" });
+    expect(store.rows.size).toBe(0);
+  });
+
+  it("the next guess in line saves normally, and a 7th is still refused", async () => {
+    const store = memoryStore();
+    const words = ["least", "heart", "plant", "moist", "fudge", "bloat"];
+    for (let i = 0; i < words.length; i++) {
+      expect((await submitGuessWith(deps(store), P, D, words[i], i)).ok).toBe(true);
+    }
+    expect(await submitGuessWith(deps(store), P, D, "crane", 6)).toEqual({ ok: false, reason: "already_finished" });
+  });
+});
+
 describe("submitGuessWith — basics", () => {
   it("rejects words that aren't in the list without touching storage", async () => {
     const store = memoryStore();

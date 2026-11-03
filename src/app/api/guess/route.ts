@@ -6,6 +6,9 @@ import { getSessionPlayerId } from "@/lib/session";
 
 const bodySchema = z.object({
   guess: z.string().length(5),
+  // Sent by the phone so queued guesses can be retried safely (see guessCore).
+  index: z.number().int().min(0).max(5).optional(),
+  gameDate: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -20,7 +23,11 @@ export async function POST(request: Request) {
   }
 
   const gameDate = todayGameDate();
-  const result = await submitGuess(playerId, gameDate, parsed.data.guess);
+  // A guess queued on the phone yesterday must not land on today's board.
+  if (parsed.data.gameDate && parsed.data.gameDate !== gameDate) {
+    return NextResponse.json({ ok: false, reason: "day_over" }, { status: 409 });
+  }
+  const result = await submitGuess(playerId, gameDate, parsed.data.guess, parsed.data.index);
 
   if (!result.ok) {
     const status = result.reason === "not_a_word" ? 422 : 409;

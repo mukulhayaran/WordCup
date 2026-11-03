@@ -52,6 +52,7 @@ export type GameResponse = {
   opponentPlayedToday: boolean;
   opponentName: string | null;
   finished: boolean;
+  /** Today's word, so the phone can check guesses itself. Only today's is ever sent. */
   solution: string | null;
   solveStreak: number;
   youNudged: boolean;
