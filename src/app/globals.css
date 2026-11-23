@@ -131,7 +131,44 @@ button {
   animation: wc-confetti var(--dur) cubic-bezier(0.25, 0.6, 0.4, 1) var(--delay) forwards;
 }
 
+@keyframes wc-wiggle {
+  0%, 70%, 100% { transform: rotate(0); }
+  78% { transform: rotate(-5deg); }
+  86% { transform: rotate(5deg); }
+  94% { transform: rotate(-3deg); }
+}
+.gift-wiggle {
+  animation: wc-wiggle 1.4s ease-in-out infinite;
+}
+
+@keyframes wc-blink {
+  to { opacity: 0.3; }
+}
+.beacon-blink {
+  animation: wc-blink 1s steps(2, start) infinite;
+}
+
+@keyframes wc-petal {
+  from { transform: translate3d(0, 0, 0) rotate(0deg); }
+  to { transform: translate3d(30px, 110vh, 0) rotate(320deg); }
+}
+.petal-fall {
+  animation: wc-petal 3.2s linear forwards;
+}
+
+@keyframes wc-new-tag {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+.new-tag {
+  animation: wc-new-tag 1.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .new-tag,
+  .gift-wiggle,
+  .beacon-blink,
+  .petal-fall,
   .tile-flip,
   .tile-pop,
   .row-shake,

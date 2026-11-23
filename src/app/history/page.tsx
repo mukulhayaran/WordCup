@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, Clock, Trophy } from "lucide-react";
 import { BackHeader } from "@/components/BackHeader";
+import { CabinetNewTag } from "@/components/CabinetNewTag";
+import { FlowerShower } from "@/components/GiftEffects";
 import { MiniGrid } from "@/components/MiniGrid";
+import { useExtras } from "@/components/useExtras";
 import { formatWeekRange, weekdayName } from "@/lib/calendar";
 import type { HistoryResult, WeekSummary } from "@/lib/history";
 import { inDisplayOrder, playerTheme } from "@/lib/theme";
@@ -18,6 +21,7 @@ export default function HistoryPage() {
     (HistoryResult & { cupTotals: { won: Record<string, number>; shared: number } }) | null
   >(null);
   const [open, setOpen] = useState<string | null>(null);
+  const { extras } = useExtras();
 
   useEffect(() => {
     fetch("/api/history").then(async (res) => {
@@ -61,6 +65,7 @@ export default function HistoryPage() {
 
   return (
     <main className="flex-1 w-full max-w-[480px] mx-auto px-4 pt-6 pb-10">
+      <FlowerShower giftId={extras?.showerId} screen="history" />
       <BackHeader title="Cup history" />
 
       <section className="mt-6 rounded-[28px] bg-card shadow-soft px-6 pt-5 pb-6 rise-in">
@@ -68,8 +73,9 @@ export default function HistoryPage() {
           <p className="text-[17px] font-semibold text-muted">Cups won, all time</p>
           <Link
             href="/cabinet"
-            className="flex items-center gap-1 rounded-full bg-accent-soft px-3 py-1 text-[14px] font-semibold text-ink"
+            className="relative flex items-center gap-1 rounded-full bg-accent-soft px-3 py-1 text-[14px] font-semibold text-ink"
           >
+            <CabinetNewTag />
             <Trophy className="h-3.5 w-3.5 text-correct" strokeWidth={2.6} aria-hidden />
             Cabinet
             <ChevronRight className="h-3.5 w-3.5 text-muted" strokeWidth={2.6} aria-hidden />

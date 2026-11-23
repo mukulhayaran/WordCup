@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, ChevronRight, Trophy } from "lucide-react";
+import { CabinetNewTag } from "@/components/CabinetNewTag";
 import { CupCelebration } from "@/components/CupCelebration";
 import { CupScoreCard } from "@/components/CupScoreCard";
 import { MessageCard } from "@/components/MessageCard";
@@ -145,8 +146,9 @@ export default function LandingPage() {
       </div>
       <Link
         href="/cabinet"
-        className="mt-3 flex items-center justify-center gap-1.5 self-center rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-ink"
+        className="relative mt-3 flex items-center justify-center gap-1.5 self-center rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-ink"
       >
+        <CabinetNewTag whenLoggedOut />
         <Trophy className="h-4 w-4 text-correct" strokeWidth={2.6} aria-hidden />
         Trophy cabinet
         <ChevronRight className="h-4 w-4 text-muted" strokeWidth={2.6} aria-hidden />

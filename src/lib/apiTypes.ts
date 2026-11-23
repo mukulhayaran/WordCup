@@ -1,5 +1,7 @@
 import type { CabinetEra, Celebration } from "./cups";
 import type { LetterStatus } from "./feedback";
+import type { PlayerEffects } from "./giftRules";
+import type { Edition } from "./newspaper";
 import type { Reaction } from "./socialRules";
 
 export type StatusPlayer = {
@@ -40,6 +42,44 @@ export type StatusResponse = {
 export type CabinetResponse = {
   totals: { won: Record<string, number>; shared: number };
   eras: CabinetEra[];
+};
+
+export type ExtrasFlower = { code: string; fromName: string; weekNumber: number | null; speech: string | null };
+export type ExtrasVaseState = { flowers: ExtrasFlower[]; garlands: number };
+export type ExtrasVase = { current: ExtrasVaseState; shelf: ExtrasVaseState[] };
+
+/** Badges, the Newspaper and gifts. Login-only, and only ever built from revealed days. */
+export type ExtrasResponse = {
+  youId: string;
+  players: Array<{ id: string; name: string }>;
+  badges: {
+    counts: Record<string, Record<string, number>>;
+    popup: { badgeId: string; keys: string[] } | null;
+    today: Record<string, string[]>;
+  };
+  weekly: {
+    defendingChampion: string | null;
+    challenge: string | null;
+    timeline: Array<{ weekNumber: number; winner: string }>;
+  };
+  newspaper: { edition: Edition; speeches: Array<{ name: string; speech: string }>; unseen: boolean } | null;
+  gifts: {
+    owed: { weekNumber: number; toName: string; shared: boolean } | null;
+    /** Who it's from only: what's inside stays secret until it's opened. */
+    toOpen: Array<{ id: string; fromName: string; weekNumber: number | null }>;
+    received: Array<{
+      id: string;
+      code: string;
+      fromName: string;
+      weekNumber: number | null;
+      speech: string | null;
+      thanks: string | null;
+    }>;
+  };
+  vases: Record<string, ExtrasVase>;
+  effects: Record<string, PlayerEffects>;
+  /** The Flower Shower currently running for you, if any. */
+  showerId: string | null;
 };
 
 export type GuessRecord = { guess: string; feedback: LetterStatus[] };

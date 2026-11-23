@@ -3,16 +3,20 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, Clock, Copy, Trophy } from "lucide-react";
+import { ArrowLeftRight, Clock, Copy, Crown, Trophy } from "lucide-react";
 import { Board, FLIP_DURATION_MS, FLIP_STAGGER_MS } from "@/components/Board";
+import { CabinetNewTag } from "@/components/CabinetNewTag";
 import { Confetti } from "@/components/Confetti";
 import { CupCelebration } from "@/components/CupCelebration";
+import { ExtrasLayer } from "@/components/ExtrasLayer";
+import { AvatarFx, FlowerShower } from "@/components/GiftEffects";
 import { Keyboard } from "@/components/Keyboard";
 import { NudgeBanner } from "@/components/NudgeBanner";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { WeekDots } from "@/components/WeekDots";
 import { TILE_BG, TILE_FG, prefersReducedMotion, vibrate } from "@/components/tiles";
-import type { GameResponse, GuessRecord, StatusPlayer, StatusResponse } from "@/lib/apiTypes";
+import { useExtras } from "@/components/useExtras";
+import type { ExtrasResponse, GameResponse, GuessRecord, StatusPlayer, StatusResponse } from "@/lib/apiTypes";
 import { msUntilNextGameDay } from "@/lib/calendar";
 import { scoreGuess, toEmojiRow } from "@/lib/feedback";
 import {
@@ -47,6 +51,8 @@ export default function PlayPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [celebrationClosed, setCelebrationClosed] = useState(false);
+  const { extras, refresh: refreshExtras } = useExtras();
+  const [extrasOpen, setExtrasOpen] = useState(false);
 
   // Read from async code (saving, reloading), which must see the latest values.
   const gameRef = useRef<GameResponse | null>(null);
@@ -233,7 +239,15 @@ export default function PlayPage() {
     [showToast]
   );
 
-  const busy = revealingRow !== null || holdBoard;
+  const busy = revealingRow !== null || holdBoard || extrasOpen;
+
+  // Today's badges unlock once the day is revealed, so re-check when someone finishes.
+  const revealKey = status ? `${serverFinished}:${status.players.filter((p) => p.playedToday).length}` : null;
+  const lastRevealKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastRevealKey.current && revealKey && revealKey !== lastRevealKey.current) refreshExtras();
+    lastRevealKey.current = revealKey;
+  }, [revealKey, refreshExtras]);
 
   const onKey = useCallback(
     (key: string) => {
@@ -337,10 +351,17 @@ export default function PlayPage() {
   const opponent = status.players.find((p) => p.id !== game.you?.id) ?? null;
   const nudgeFrom = game.finished ? null : (status.forYou?.nudgeFrom ?? null);
   const celebration = celebrationClosed ? null : (status.forYou?.celebration ?? null);
+  const showResult = game.finished && serverFinished && queue.length === 0 && !holdBoard;
+  const betweenGames = !celebration && revealingRow === null && (showResult || game.guesses.length === 0);
+  const fxFor = (id?: string) => (id ? extras?.effects[id] : undefined);
+  const weekly = extras?.weekly;
+  const headerExtra = (weekly?.defendingChampion ? 26 : 0) + (weekly?.challenge ? 42 : 0);
 
   return (
     <>
       {celebrate && <Confetti />}
+      <FlowerShower giftId={extras?.showerId} screen="play" waiting={extrasOpen || !!celebration} />
+      <ExtrasLayer extras={extras} active={betweenGames} refresh={refreshExtras} onOpenChange={setExtrasOpen} />
       {celebration && (
         <CupCelebration
           celebration={celebration}
@@ -349,8 +370,15 @@ export default function PlayPage() {
           onSeeCabinet={() => router.push("/cabinet")}
         />
       )}
-      {game.finished && serverFinished && queue.length === 0 && !holdBoard ? (
-        <FinishedView game={game} status={status} opponent={opponent} onSwitch={switchPlayer} onRefresh={loadAll} />
+      {showResult ? (
+        <FinishedView
+          game={game}
+          status={status}
+          opponent={opponent}
+          extras={extras}
+          onSwitch={switchPlayer}
+          onRefresh={loadAll}
+        />
       ) : (
         <main
           className="flex-1 flex flex-col items-center w-full max-w-[480px] mx-auto px-4 pt-5 pb-3"
@@ -358,7 +386,7 @@ export default function PlayPage() {
           // (with a little less room when the nudge banner is showing).
           style={
             {
-              "--tile": `clamp(38px, min(15.5vw, calc((100dvh - ${nudgeFrom ? 556 : 490}px) / 6)), 62px)`,
+              "--tile": `clamp(38px, min(15.5vw, calc((100dvh - ${(nudgeFrom ? 556 : 490) + headerExtra}px) / 6)), 62px)`,
             } as CSSProperties
           }
         >
@@ -375,8 +403,9 @@ export default function PlayPage() {
             <Link
               href="/history"
               aria-label="Cup history"
-              className="h-14 w-14 rounded-full bg-accent-soft flex items-center justify-center text-ink"
+              className="relative h-14 w-14 rounded-full bg-accent-soft flex items-center justify-center text-ink"
             >
+              <CabinetNewTag />
               <Clock className="h-6 w-6" strokeWidth={2.4} />
             </Link>
           </header>
@@ -391,7 +420,9 @@ export default function PlayPage() {
             <section className="mt-3 w-full rounded-[28px] bg-card shadow-soft px-4 pt-3 pb-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <PlayerAvatar name={you.name} avatarInitial={you.avatarInitial} avatarUrl={you.avatarUrl} size={46} filled />
+                  <AvatarFx fx={fxFor(you.id)} size={46}>
+                    <PlayerAvatar name={you.name} avatarInitial={you.avatarInitial} avatarUrl={you.avatarUrl} size={46} filled />
+                  </AvatarFx>
                   <div className="leading-tight">
                     <p className="text-[15px] text-muted">You</p>
                     <p className="text-[26px] font-bold text-ink">{you.weekPoints}</p>
@@ -405,15 +436,28 @@ export default function PlayPage() {
                     <p className="text-[15px] text-muted">{opponent.name}</p>
                     <p className="text-[26px] font-bold text-ink">{opponent.weekPoints}</p>
                   </div>
-                  <PlayerAvatar
-                    name={opponent.name}
-                    avatarInitial={opponent.avatarInitial}
-                    avatarUrl={opponent.avatarUrl}
-                    size={46}
-                    filled
-                  />
+                  <AvatarFx fx={fxFor(opponent.id)} size={46}>
+                    <PlayerAvatar
+                      name={opponent.name}
+                      avatarInitial={opponent.avatarInitial}
+                      avatarUrl={opponent.avatarUrl}
+                      size={46}
+                      filled
+                    />
+                  </AvatarFx>
                 </div>
               </div>
+              {weekly?.defendingChampion && (
+                <p className="mt-1.5 flex items-center justify-center gap-1 text-[13px] font-semibold text-ink">
+                  <Crown className="h-3.5 w-3.5 text-correct" strokeWidth={2.6} aria-hidden />
+                  {weekly.defendingChampion} · Defending Champion
+                </p>
+              )}
+              {weekly?.challenge && (
+                <p className="mt-1.5 rounded-[14px] bg-[var(--madhulika-soft)] px-3 py-1.5 text-center text-[13px] font-semibold leading-tight text-ink">
+                  {weekly.challenge}
+                </p>
+              )}
               <div className="mt-2.5">
                 <WeekDots days={status.weekDays} today={status.gameDate} players={status.players} size={36} />
               </div>
@@ -480,12 +524,14 @@ function FinishedView({
   game,
   status,
   opponent,
+  extras,
   onSwitch,
   onRefresh,
 }: {
   game: GameResponse;
   status: StatusResponse;
   opponent: StatusPlayer | null;
+  extras: ExtrasResponse | null;
   onSwitch: () => void;
   onRefresh: () => void;
 }) {
@@ -553,8 +599,9 @@ function FinishedView({
         <Link
           href="/history"
           aria-label="Cup history"
-          className="h-14 w-14 rounded-full bg-accent-soft flex items-center justify-center text-ink"
+          className="relative h-14 w-14 rounded-full bg-accent-soft flex items-center justify-center text-ink"
         >
+          <CabinetNewTag />
           <Trophy className="h-6 w-6" strokeWidth={2.4} />
         </Link>
         <h1 className="text-[30px] font-bold text-ink">Word Cup</h1>
@@ -609,13 +656,15 @@ function FinishedView({
 
       {opponent && (
         <section className="relative mt-4 flex items-center gap-3 rounded-[28px] bg-card shadow-soft p-4 rise-in">
-          <PlayerAvatar
-            name={opponent.name}
-            avatarInitial={opponent.avatarInitial}
-            avatarUrl={opponent.avatarUrl}
-            size={58}
-            ring
-          />
+          <AvatarFx fx={extras?.effects[opponent.id]} size={58}>
+            <PlayerAvatar
+              name={opponent.name}
+              avatarInitial={opponent.avatarInitial}
+              avatarUrl={opponent.avatarUrl}
+              size={58}
+              ring
+            />
+          </AvatarFx>
           {opponent.playedToday ? (
             <>
               <div className="flex-1 min-w-0 leading-snug">

@@ -4,11 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Trophy } from "lucide-react";
 import { BackHeader } from "@/components/BackHeader";
+import { GiftArt } from "@/components/GiftArt";
+import { AvatarFx, FlowerShower } from "@/components/GiftEffects";
 import { MiniGrid } from "@/components/MiniGrid";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { REACTION_ICONS } from "@/components/reactions";
 import { vibrate } from "@/components/tiles";
+import { useExtras } from "@/components/useExtras";
 import type { DuelPlayer, DuelResponse } from "@/lib/apiTypes";
+import { BADGE_BY_ID } from "@/lib/badgeCatalog";
+import type { PlayerEffects } from "@/lib/giftRules";
 import { MESSAGE_MAX_CHARS, REACTIONS, type Reaction } from "@/lib/socialRules";
 import { inDisplayOrder, playerTheme } from "@/lib/theme";
 
@@ -57,6 +62,7 @@ function RevealedDuelView({ duel }: { duel: RevealedDuel }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { extras } = useExtras();
 
   const [left, right] = inDisplayOrder(duel.players);
   const opponent = duel.players.find((p) => p.id !== duel.youId) ?? right;
@@ -109,6 +115,7 @@ function RevealedDuelView({ duel }: { duel: RevealedDuel }) {
 
   return (
     <main className="flex-1 w-full max-w-[480px] mx-auto px-4 pt-6 pb-8">
+      <FlowerShower giftId={extras?.showerId} screen="duel" />
       <BackHeader title="Today's duel" subtitle={`${duel.weekday} · Week ${duel.weekNumber}`} />
 
       <section
@@ -134,6 +141,8 @@ function RevealedDuelView({ duel }: { duel: RevealedDuel }) {
             highlighted={p.points > 0 && winners.length === 1}
             reaction={reactionOn(p)}
             reactionFrom={duel.players.find((x) => x.id !== p.id)?.name ?? ""}
+            badgeIds={extras?.badges.today[p.id] ?? []}
+            fx={extras?.effects[p.id]}
           />
         ))}
       </section>
@@ -227,11 +236,15 @@ function DuelCard({
   highlighted,
   reaction,
   reactionFrom,
+  badgeIds,
+  fx,
 }: {
   player: DuelPlayer;
   highlighted: boolean;
   reaction: Reaction | null;
   reactionFrom: string;
+  badgeIds: string[];
+  fx?: PlayerEffects;
 }) {
   const theme = playerTheme(player.name);
   const score =
@@ -251,7 +264,9 @@ function DuelCard({
           <badge.Icon className="h-5 w-5" strokeWidth={2.4} />
         </span>
       )}
-      <PlayerAvatar name={player.name} avatarInitial={player.avatarInitial} avatarUrl={player.avatarUrl} size={80} ring />
+      <AvatarFx fx={fx} size={80}>
+        <PlayerAvatar name={player.name} avatarInitial={player.avatarInitial} avatarUrl={player.avatarUrl} size={80} ring />
+      </AvatarFx>
       <p className="mt-3 text-[22px] font-bold text-ink">{player.name}</p>
       <p className="text-[40px] font-bold leading-tight" style={{ color: player.status === "won" ? theme.ink : "var(--muted)" }}>
         {score}
@@ -263,6 +278,25 @@ function DuelCard({
           <p className="text-[15px] text-muted">Didn&apos;t play</p>
         )}
       </div>
+      {badgeIds.length > 0 && (
+        <div className="mt-3 w-full">
+          <p className="text-center text-[13px] text-muted">Today&apos;s badges</p>
+          <ul className="mt-1 flex flex-wrap justify-center gap-1">
+            {badgeIds.map((id) => {
+              const badge = BADGE_BY_ID.get(id);
+              return badge ? (
+                <li
+                  key={id}
+                  className="flex items-center gap-1 rounded-[12px] bg-[var(--madhulika-soft)] px-2 py-1 text-[12px] font-semibold leading-tight text-ink"
+                >
+                  <GiftArt icon={badge.icon} size={14} />
+                  {badge.name}
+                </li>
+              ) : null;
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
