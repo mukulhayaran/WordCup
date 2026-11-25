@@ -14,6 +14,7 @@ import { Keyboard } from "@/components/Keyboard";
 import { NudgeBanner } from "@/components/NudgeBanner";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { WeekDots } from "@/components/WeekDots";
+import { WordMeaningCard } from "@/components/WordMeaningCard";
 import { TILE_BG, TILE_FG, prefersReducedMotion, vibrate } from "@/components/tiles";
 import { useExtras } from "@/components/useExtras";
 import type { ExtrasResponse, GameResponse, GuessRecord, StatusPlayer, StatusResponse } from "@/lib/apiTypes";
@@ -653,6 +654,8 @@ function FinishedView({
           {copied ? "Copied!" : "Copy result"}
         </button>
       </section>
+
+      {game.solution && <WordMeaningCard word={game.solution} gameDate={game.gameDate} />}
 
       {opponent && (
         <section className="relative mt-4 flex items-center gap-3 rounded-[28px] bg-card shadow-soft p-4 rise-in">

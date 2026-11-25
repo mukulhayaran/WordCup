@@ -1,5 +1,29 @@
 import { resolveDailyWord } from "./nytWord";
 import { supabaseAdmin } from "./supabaseAdmin";
+import { lookUpMeaning, type WordMeaning } from "./wordMeaning";
+
+/**
+ * The meaning of a day's word, looked up once and saved next to it. Returns
+ * null if it can't be found right now; the game never depends on it.
+ */
+export async function getWordMeaning(gameDate: string): Promise<WordMeaning | null> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("daily_words")
+    .select("solution, meaning")
+    .eq("game_date", gameDate)
+    .maybeSingle();
+  if (error || !data) return null;
+  if (data.meaning) return data.meaning as WordMeaning;
+
+  try {
+    const meaning = await lookUpMeaning(data.solution);
+    await db.from("daily_words").update({ meaning }).eq("game_date", gameDate).is("meaning", null);
+    return meaning;
+  } catch {
+    return null;
+  }
+}
 
 export type DailyWordRow = {
   game_date: string;
