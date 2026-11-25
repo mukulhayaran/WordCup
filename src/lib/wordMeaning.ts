@@ -66,7 +66,7 @@ export function pickMeaning(word: string, reply: unknown): WordMeaning {
 export async function lookUpMeaning(word: string, fetchImpl: typeof fetch = fetch): Promise<WordMeaning> {
   const res = await fetchImpl(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
     cache: "no-store",
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(10000),
   });
   if (res.status === 404) return { items: [], example: null };
   if (!res.ok) throw new Error(`Dictionary returned ${res.status}`);

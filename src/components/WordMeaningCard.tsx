@@ -1,7 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { WordMeaning } from "@/lib/wordMeaning";
+import { lookUpMeaning, type WordMeaning } from "@/lib/wordMeaning";
+
+/** Asks the server for the saved meaning: null if it has none, undefined if it said no. */
+async function savedMeaning(gameDate: string): Promise<WordMeaning | null | undefined> {
+  try {
+    const res = await fetch("/api/meaning", { cache: "no-store" });
+    if (res.status === 401 || res.status === 403) return undefined;
+    if (!res.ok) return null;
+    const data: { gameDate: string; meaning: WordMeaning | null } = await res.json();
+    return data.gameDate === gameDate ? data.meaning : undefined;
+  } catch {
+    return null;
+  }
+}
 
 /** "What it means" card on the result screen. Shows nothing if there's no meaning. */
 export function WordMeaningCard({ word, gameDate }: { word: string; gameDate: string }) {
@@ -9,18 +22,24 @@ export function WordMeaningCard({ word, gameDate }: { word: string; gameDate: st
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/meaning", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { gameDate: string; meaning: WordMeaning | null } | null) => {
-        if (!cancelled && data?.gameDate === gameDate) setMeaning(data.meaning);
-      })
-      .catch(() => {
-        // Offline: no card, nothing else depends on it.
-      });
+    (async () => {
+      let found = await savedMeaning(gameDate);
+      if (found === undefined) return;
+      // The dictionary turns away the server but allows browsers, so the phone
+      // looks it up itself when the server couldn't.
+      if (!found || found.items.length === 0) {
+        try {
+          found = await lookUpMeaning(word);
+        } catch {
+          // Offline or the dictionary is down: no card, nothing else depends on it.
+        }
+      }
+      if (!cancelled && found) setMeaning(found);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [gameDate]);
+  }, [word, gameDate]);
 
   if (!meaning || meaning.items.length === 0) return null;
   const types = [...new Set(meaning.items.map((i) => i.partOfSpeech).filter(Boolean))];
